@@ -25,7 +25,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/product/**").permitAll()
                         .requestMatchers("/api/favorite/**").hasRole("ПРЕПОДАВАТЕЛЬ")
                         .requestMatchers("/api/operations/**").hasRole("ПРЕПОДАВАТЕЛЬ")
+                        .requestMatchers("/api/analytics/**").permitAll()
                         .requestMatchers("/api/resetData/**").permitAll()
+                        .requestMatchers("/api/migration/**", "/api/analytics/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .logout(logout -> logout
