@@ -15,32 +15,38 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
-    public void deleteUserById(Long id) {
-        userRepository.deleteById(id);
+    public void deleteUserById(String id) {
+        userRepository.deleteById(id).block();
     }
 
     @Transactional
     public UserResponse createUser(UserRequest userRequest) {
-        if (userRepository.existsByNameIgnoreCase(userRequest.name())) {
+        Boolean exists = userRepository.existsByNameIgnoreCase(userRequest.name()).block();
+        if (Boolean.TRUE.equals(exists)) {
             throw new UserAlreadyExistsException("User already exists");
         }
-        UserEntity user = new UserEntity(
+        User user = new User(
                 userRequest.name(),
                 userRequest.email(),
                 passwordEncoder.encode(userRequest.password()),
                 "ПРЕПОДАВАТЕЛЬ"
         );
-        return UserResponse.fromEntity(userRepository.save(user));
+        User saved = userRepository.save(user).block();
+        return UserResponse.fromEntity(saved);
     }
 
-    public UserResponse getUserById(Long id) {
-        return userRepository.findById(id)
-                .map(UserResponse::fromEntity)
-                .orElseThrow(() -> new UserNotFoundException("User not found"));
+    public UserResponse getUserById(String id) {
+        User user = userRepository.findById(id).block();
+        if (user == null) {
+            throw new UserNotFoundException("User not found");
+        }
+        return UserResponse.fromEntity(user);
     }
 
     public List<UserResponse> getUsers() {
         return userRepository.findAll()
+                .collectList()
+                .block()
                 .stream()
                 .map(UserResponse::fromEntity)
                 .toList();

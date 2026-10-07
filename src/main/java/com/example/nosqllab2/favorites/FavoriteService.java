@@ -1,6 +1,6 @@
 package com.example.nosqllab2.favorites;
 
-import com.example.nosqllab2.products.ProductEntity;
+import com.example.nosqllab2.products.Product;
 import com.example.nosqllab2.products.ProductNotFoundException;
 import com.example.nosqllab2.products.ProductResponse;
 import com.example.nosqllab2.products.ProductRepository;
@@ -18,32 +18,38 @@ public class FavoriteService {
     private final ProductRepository productRepository;
     private final OperationService operationService;
 
-    public List<ProductResponse> getUsersFavorites(Long userId) {
-        return favoriteRepository.findProductsByUserId(userId)
+    public List<ProductResponse> getUsersFavorites(String userId) {
+        return favoriteRepository.findByUserId(userId)
+                .collectList()
+                .block()
                 .stream()
-                .map(ProductResponse::fromEntity)
+                .map(favorite -> ProductResponse.fromEntity(favorite.getProduct()))
                 .toList();
     }
 
-    @Transactional
-    public void addFavorite(Long userId, Long productId) {
-        ProductEntity product = productRepository.findById(productId)
-                .orElseThrow(() -> new ProductNotFoundException("Product not found"));
-
-        UserFavoriteId id = new UserFavoriteId(userId, productId);
-        if (!favoriteRepository.existsById(id)) {
-            favoriteRepository.save(new UserFavoriteEntity(userId, product));
+    public void addFavorite(String userId, String productId) {
+        Product product = productRepository.findById(productId).block();
+        if (product == null) {
+            throw new ProductNotFoundException("Product not found");
         }
 
-        operationService.logOperation(userId, String.format("User (id=%d) added product (id=%d) to favs", userId, productId));
+        String id = userId + "_" + productId;
+        Boolean exists = favoriteRepository.existsById(id).block();
+
+        if (Boolean.FALSE.equals(exists)) {
+            favoriteRepository.save(new UserFavorite(userId, product)).block();
+        }
+
+        operationService.logOperation(userId, String.format("User (id=%s) added product (id=%s) to favs", userId, productId));
     }
 
     @Transactional
-    public void deleteFavorite(Long userId, Long productId) {
-        favoriteRepository.deleteById(new UserFavoriteId(userId, productId));
+    public void deleteFavorite(String userId, String productId) {
+        String id = userId + "_" + productId;
+        favoriteRepository.deleteById(id).block();
         operationService.logOperation(
                 userId,
-                String.format("User (id=%d) deleted product (id=%d) from favs", userId, productId)
+                String.format("User (id=%s) deleted product (id=%s) from favs", userId, productId)
         );
     }
 }

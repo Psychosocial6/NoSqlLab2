@@ -1,7 +1,8 @@
 package com.example.nosqllab2.favorites;
 
 import com.example.nosqllab2.products.ProductResponse;
-import com.example.nosqllab2.users.UserEntity;
+import com.example.nosqllab2.users.User;
+import com.example.nosqllab2.users.UserNotFoundException;
 import com.example.nosqllab2.users.UserRepository;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -9,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,8 +33,7 @@ public class FavoriteController {
     public ResponseEntity<Void> addFavorite(
             @PathVariable
             @NotNull(message = "id required")
-            @Positive(message = "id must be positive")
-            Long productId) {
+            String productId) {
         favoriteService.addFavorite(getUserId(), productId);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -43,16 +42,17 @@ public class FavoriteController {
     public ResponseEntity<Void> deleteFavorite(
             @PathVariable
             @NotNull(message = "id required")
-            @Positive(message = "id must be positive")
-            Long productId) {
+            String productId) {
         favoriteService.deleteFavorite(getUserId(), productId);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
-    private Long getUserId() {
+    private String getUserId() {
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-        UserEntity user = userRepository.findByNameIgnoreCase(currentUsername)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        User user = userRepository.findByNameIgnoreCase(currentUsername).block();
+        if (user == null) {
+            throw new UserNotFoundException("User not found");
+        }
         return user.getId();
     }
 }

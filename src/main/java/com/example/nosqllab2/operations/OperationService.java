@@ -1,7 +1,7 @@
 package com.example.nosqllab2.operations;
 
 import com.example.nosqllab2.models.OperationCache;
-import com.example.nosqllab2.models.OperationLog;
+import com.example.nosqllab2.models.OperationLogDTO;
 import com.example.nosqllab2.repository.OperationCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,14 +18,14 @@ public class OperationService {
     private final OperationLogRepository logRepository;
     private final OperationCacheRepository cacheRepository;
 
-    public void logOperation(Long userId, String operation) {
-        OperationLogEntity entity = new OperationLogEntity(userId, operation, LocalDateTime.now());
-        logRepository.save(entity);
+    public void logOperation(String userId, String operation) {
+        OperationLog entity = new OperationLog(userId, operation, LocalDateTime.now());
+        logRepository.save(entity).block();
         cacheRepository.delete(String.valueOf(userId));
         log.info("cache invalidated for user {}", userId);
     }
 
-    public List<OperationLog> getUserOperations(Long userId) {
+    public List<OperationLogDTO> getUserOperations(String userId) {
         String cacheKey = String.valueOf(userId);
         long startRiak = System.nanoTime();
         Optional<OperationCache> cache = cacheRepository.findById(cacheKey);
@@ -35,9 +35,11 @@ public class OperationService {
             return cache.get().operations();
         }
         long startPostgres = System.nanoTime();
-        List<OperationLog> userOps = logRepository.findTop10ByUserIdOrderByOperationTimeDesc(userId)
+        List<OperationLogDTO> userOps = logRepository.findTop10ByUserIdOrderByOperationTimeDesc(userId)
+                .collectList()
+                .block()
                 .stream()
-                .map(OperationLog::fromEntity)
+                .map(OperationLogDTO::fromEntity)
                 .toList();
         long pgDurationNs = System.nanoTime() - startPostgres;
         log.info("cache miss: {} ms ({} ns)", pgDurationNs / 1_000_000.0, pgDurationNs);
@@ -45,12 +47,12 @@ public class OperationService {
         return userOps;
     }
 
-    public Map<String, Object> speedtest(Long userId, int iterations) {
+    public Map<String, Object> speedtest(String userId, int iterations) {
         String cacheKey = String.valueOf(userId);
         getUserOperations(userId);
         long startPg = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            logRepository.findTop10ByUserIdOrderByOperationTimeDesc(userId);
+            logRepository.findTop10ByUserIdOrderByOperationTimeDesc(userId).collectList().block();
         }
         long totalPgNs = System.nanoTime() - startPg;
         double avgPgMs = (totalPgNs / 1_000_000.0) / iterations;

@@ -1,12 +1,12 @@
 package com.example.nosqllab2.users;
 
-public record UserResponse(Long id, String name, String email, String role) {
-    public static UserResponse fromEntity(UserEntity userEntity) {
+public record UserResponse(String id, String name, String email, String role) {
+    public static UserResponse fromEntity(User user) {
         return new UserResponse(
-                userEntity.getId(),
-                userEntity.getName(),
-                userEntity.getEmail(),
-                userEntity.getRole()
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getRole()
         );
     }
 }

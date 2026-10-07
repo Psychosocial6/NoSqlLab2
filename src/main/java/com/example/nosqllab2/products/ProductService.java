@@ -15,34 +15,39 @@ public class ProductService {
     public List<ProductResponse> getProducts() {
         return productRepository
                 .findAll()
+                .collectList()
+                .block()
                 .stream()
                 .map(ProductResponse::fromEntity)
                 .toList();
     }
 
-    public ProductResponse getProductById(Long id) {
-        return ProductResponse.fromEntity(
-                productRepository.findById(id)
-                        .orElseThrow(() -> new ProductNotFoundException("product not found"))
-        );
+    public ProductResponse getProductById(String id) {
+        Product product = productRepository.findById(id).block();
+        if (product == null) {
+            throw new ProductNotFoundException("Product not found");
+        }
+        return ProductResponse.fromEntity(product);
     }
 
 
     public ProductResponse createProduct(ProductRequest productRequest) {
-        ProductEntity productEntity = new ProductEntity(
+        Product product = new Product(
                 productRequest.name(),
                 productRequest.description(),
                 productRequest.price()
         );
-
-        return ProductResponse.fromEntity(productRepository.save(productEntity));
+        Product saved = productRepository.save(product).block();
+        return ProductResponse.fromEntity(saved);
     }
 
     @Transactional
-    public void deleteProductById(Long id) {
-        ProductEntity productEntity = productRepository.findById(id)
-                .orElseThrow(() -> new ProductNotFoundException("Product not found"));
+    public void deleteProductById(String id) {
+        Product product = productRepository.findById(id).block();
+        if (product == null) {
+            throw new ProductNotFoundException("Product not found");
+        }
 
-        productRepository.delete(productEntity);
+        productRepository.delete(product).block();
     }
 }

@@ -1,15 +1,15 @@
 package com.example.nosqllab2.models;
 
-import com.example.nosqllab2.operations.OperationLogEntity;
+import com.example.nosqllab2.operations.OperationLog;
 
-public record OperationLog(
+public record OperationLogDTO(
         String id,
-        Long userId,
+        String userId,
         String operation,
         String operationTime
 ) {
-    public static OperationLog fromEntity(OperationLogEntity entity) {
-        return new OperationLog(
+    public static OperationLogDTO fromEntity(OperationLog entity) {
+        return new OperationLogDTO(
                 String.valueOf(entity.getId()),
                 entity.getUserId(),
                 entity.getOperation(),
