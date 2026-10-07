@@ -42,4 +42,12 @@ public class ProductController {
         productService.deleteProductById(id);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ProductResponse> updateProduct(
+            @PathVariable @NotNull(message = "id required") String id,
+            @Valid @RequestBody ProductRequest productRequest) {
+        ProductResponse updated = productService.updateProduct(id, productRequest);
+        return ResponseEntity.ok(updated);
+    }
 }

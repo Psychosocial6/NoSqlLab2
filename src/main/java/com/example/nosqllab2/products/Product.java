@@ -6,8 +6,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.Date;
 import java.util.UUID;
-
 
 @NoArgsConstructor
 @Setter
@@ -19,11 +19,15 @@ public class Product {
     private String name;
     private String description;
     private Double price;
+    private Object status;
+    private Date createdAt;
 
     public Product(String name, String description, Double price) {
         this.id = String.valueOf(UUID.randomUUID());
         this.name = name;
         this.description = description;
         this.price = price;
+        this.status = "AVAILABLE";
+        this.createdAt = new Date();
     }
 }
