@@ -21,7 +21,7 @@ public class ResetTokenService {
     private static final String BASE_URL = "http://localhost:8080/api/resetData/reset";
 
     public String createResetToken(String username){
-        if(!userRepository.existsByNameIgnoreCase(username)){
+        if(Boolean.FALSE.equals(userRepository.existsByNameIgnoreCase(username).block())){
             throw new RuntimeException("User not found");
         }
 

@@ -25,7 +25,7 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ProductResponse> getProductById(@PathVariable @NotNull(message = "id required") @Positive(message = "id must be positive") Long id) {
+    public ResponseEntity<ProductResponse> getProductById(@PathVariable @NotNull(message = "id required") String id) {
         ProductResponse productResponse = productService.getProductById(id);
         return ResponseEntity.ok(productResponse);
     }
@@ -38,7 +38,7 @@ public class ProductController {
 
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteProductById(@PathVariable @NotNull(message = "id required") @Positive(message = "id must be positive") Long id) {
+    public ResponseEntity<Void> deleteProductById(@PathVariable @NotNull(message = "id required") String id) {
         productService.deleteProductById(id);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }

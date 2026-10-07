@@ -25,7 +25,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable @NotNull(message = "id required") @Positive(message = "id must be positive") Long id) {
+    public ResponseEntity<UserResponse> getUserById(@PathVariable @NotNull(message = "id required") String id) {
         UserResponse userResponse = userService.getUserById(id);
         return ResponseEntity.ok(userResponse);
     }
@@ -37,7 +37,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUserById(@PathVariable @NotNull(message = "id required") @Positive(message = "id must be positive") Long id) {
+    public ResponseEntity<Void> deleteUserById(@PathVariable @NotNull(message = "id required") String id) {
         userService.deleteUserById(id);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }

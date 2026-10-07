@@ -8,7 +8,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,8 +32,10 @@ public class AuthController {
         HttpSession session = request.getSession(true);
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
 
-        UserEntity user = userRepository.findByNameIgnoreCase(loginRequest.username())
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        User user = userRepository.findByNameIgnoreCase(loginRequest.username()).block();
+        if (user == null) {
+            throw new UserNotFoundException("User not found");
+        }
 
         return ResponseEntity.ok(UserResponse.fromEntity(user));
     }
@@ -44,8 +45,10 @@ public class AuthController {
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401).build();
         }
-        UserEntity user = userRepository.findByNameIgnoreCase(authentication.getName())
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + authentication.getName()));
+        User user = userRepository.findByNameIgnoreCase(authentication.getName()).block();
+        if (user == null) {
+            throw new UserNotFoundException("User not found");
+        }
         return ResponseEntity.ok(UserResponse.fromEntity(user));
     }
 }

@@ -1,12 +1,11 @@
 package com.example.nosqllab2.users;
 
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.google.cloud.spring.data.firestore.FirestoreReactiveRepository;
 import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
+import reactor.core.publisher.Mono;
 
 @Repository
-public interface UserRepository extends JpaRepository<UserEntity, Long> {
-    Optional<UserEntity> findByNameIgnoreCase(String name);
-    boolean existsByNameIgnoreCase(String name);
+public interface UserRepository extends FirestoreReactiveRepository<User> {
+    Mono<User> findByNameIgnoreCase(String name);
+    Mono<Boolean> existsByNameIgnoreCase(String name);
 }

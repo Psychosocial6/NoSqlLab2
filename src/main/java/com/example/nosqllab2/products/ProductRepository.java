@@ -1,8 +1,8 @@
 package com.example.nosqllab2.products;
 
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.google.cloud.spring.data.firestore.FirestoreReactiveRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
+public interface ProductRepository extends FirestoreReactiveRepository<Product> {
 }
