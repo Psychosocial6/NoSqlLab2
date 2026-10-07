@@ -2,7 +2,6 @@ package com.example.nosqllab2.products;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -41,7 +40,6 @@ public class ProductService {
         return ProductResponse.fromEntity(saved);
     }
 
-    @Transactional
     public void deleteProductById(String id) {
         Product product = productRepository.findById(id).block();
         if (product == null) {

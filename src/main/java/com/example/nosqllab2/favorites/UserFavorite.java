@@ -10,17 +10,17 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-@Document
+@Document(collectionName = "user_favorites")
 public class UserFavorite {
     @DocumentId
     private String id;
 
     private String userId;
-    private Product product;
+    private String productId;
 
-    public UserFavorite(String userId, Product product) {
-        this.id = userId + "_" + product.getId();
+    public UserFavorite(String userId, String productId) {
+        this.id = userId + "_" + productId;
         this.userId = userId;
-        this.product = product;
+        this.productId = productId;
     }
 }

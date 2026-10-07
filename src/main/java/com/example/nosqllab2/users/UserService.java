@@ -3,7 +3,6 @@ package com.example.nosqllab2.users;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -14,12 +13,10 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    @Transactional
     public void deleteUserById(String id) {
         userRepository.deleteById(id).block();
     }
 
-    @Transactional
     public UserResponse createUser(UserRequest userRequest) {
         Boolean exists = userRepository.existsByNameIgnoreCase(userRequest.name()).block();
         if (Boolean.TRUE.equals(exists)) {

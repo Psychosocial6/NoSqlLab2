@@ -7,9 +7,10 @@ import com.example.nosqllab2.products.ProductRepository;
 import com.example.nosqllab2.operations.OperationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
+
 @RequiredArgsConstructor
 @Service
 public class FavoriteService {
@@ -19,11 +20,18 @@ public class FavoriteService {
     private final OperationService operationService;
 
     public List<ProductResponse> getUsersFavorites(String userId) {
-        return favoriteRepository.findByUserId(userId)
+        List<UserFavorite> favorites = favoriteRepository.findByUserId(userId)
                 .collectList()
-                .block()
-                .stream()
-                .map(favorite -> ProductResponse.fromEntity(favorite.getProduct()))
+                .block();
+
+        if (favorites == null || favorites.isEmpty()) {
+            return List.of();
+        }
+
+        return favorites.stream()
+                .map(fav -> productRepository.findById(fav.getProductId()).block())
+                .filter(Objects::nonNull)
+                .map(ProductResponse::fromEntity)
                 .toList();
     }
 
@@ -37,13 +45,12 @@ public class FavoriteService {
         Boolean exists = favoriteRepository.existsById(id).block();
 
         if (Boolean.FALSE.equals(exists)) {
-            favoriteRepository.save(new UserFavorite(userId, product)).block();
+            favoriteRepository.save(new UserFavorite(userId, productId)).block();
         }
 
         operationService.logOperation(userId, String.format("User (id=%s) added product (id=%s) to favs", userId, productId));
     }
 
-    @Transactional
     public void deleteFavorite(String userId, String productId) {
         String id = userId + "_" + productId;
         favoriteRepository.deleteById(id).block();

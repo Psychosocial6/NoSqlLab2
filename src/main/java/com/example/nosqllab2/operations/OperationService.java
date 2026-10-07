@@ -7,7 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.*;
 
 @Slf4j
@@ -19,7 +19,7 @@ public class OperationService {
     private final OperationCacheRepository cacheRepository;
 
     public void logOperation(String userId, String operation) {
-        OperationLog entity = new OperationLog(userId, operation, LocalDateTime.now());
+        OperationLog entity = new OperationLog(userId, operation, new Date());
         logRepository.save(entity).block();
         cacheRepository.delete(String.valueOf(userId));
         log.info("cache invalidated for user {}", userId);
@@ -35,7 +35,7 @@ public class OperationService {
             return cache.get().operations();
         }
         long startPostgres = System.nanoTime();
-        List<OperationLogDTO> userOps = logRepository.findTop10ByUserIdOrderByOperationTimeDesc(userId)
+        List<OperationLogDTO> userOps = logRepository.findByUserIdOrderByOperationTimeDesc(userId)
                 .collectList()
                 .block()
                 .stream()
@@ -52,7 +52,7 @@ public class OperationService {
         getUserOperations(userId);
         long startPg = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            logRepository.findTop10ByUserIdOrderByOperationTimeDesc(userId).collectList().block();
+            logRepository.findByUserIdOrderByOperationTimeDesc(userId).collectList().block();
         }
         long totalPgNs = System.nanoTime() - startPg;
         double avgPgMs = (totalPgNs / 1_000_000.0) / iterations;

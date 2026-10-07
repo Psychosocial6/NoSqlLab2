@@ -6,10 +6,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.UUID;
+
 @NoArgsConstructor
 @Getter
 @Setter
-@Document
+@Document(collectionName = "users")
 public class User {
     @DocumentId
     private String id;
@@ -19,6 +21,7 @@ public class User {
     private String role;
 
     public User(String name, String email, String password, String role) {
+        this.id = String.valueOf(UUID.randomUUID());
         this.name = name;
         this.email = email;
         this.password = password;
