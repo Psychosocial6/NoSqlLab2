@@ -6,20 +6,22 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.util.Date;
+import java.util.UUID;
 
 @NoArgsConstructor
 @Getter
 @Setter
-@Document
+@Document(collectionName = "operation_logs")
 public class OperationLog {
     @DocumentId
     private String id;
     private String userId;
     private String operation;
-    private LocalDateTime operationTime;
+    private Date operationTime;
 
-    public OperationLog(String userId, String operation, LocalDateTime operationTime) {
+    public OperationLog(String userId, String operation, Date operationTime) {
+        this.id = String.valueOf(UUID.randomUUID());
         this.userId = userId;
         this.operation = operation;
         this.operationTime = operationTime;

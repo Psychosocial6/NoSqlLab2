@@ -2,7 +2,6 @@ package com.example.nosqllab2.operations;
 
 import com.example.nosqllab2.models.OperationLogDTO;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;

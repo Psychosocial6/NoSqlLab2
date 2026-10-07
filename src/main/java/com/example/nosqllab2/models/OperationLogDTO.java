@@ -13,7 +13,7 @@ public record OperationLogDTO(
                 String.valueOf(entity.getId()),
                 entity.getUserId(),
                 entity.getOperation(),
-                entity.getOperationTime().toString()
+                entity.getOperationTime() != null ? entity.getOperationTime().toString() : ""
         );
     }
 }

@@ -7,5 +7,5 @@ import reactor.core.publisher.Flux;
 
 @Repository
 public interface OperationLogRepository extends FirestoreReactiveRepository<OperationLog> {
-    Flux<OperationLog> findTop10ByUserIdOrderByOperationTimeDesc(String userId);
+    Flux<OperationLog> findByUserIdOrderByOperationTimeDesc(String userId);
 }
