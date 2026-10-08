@@ -145,6 +145,14 @@ public class ProductService {
                 if (!productSnap.exists()) {
                     throw new ProductNotFoundException("Product not found");
                 }
+                DocumentReference categoryRef = null;
+                DocumentSnapshot categorySnap = null;
+                String catId = request.categoryId() != null ? request.categoryId() : productSnap.getString("categoryId");
+
+                if (catId != null && !catId.isBlank()) {
+                    categoryRef = firestore.collection("categories").document(catId);
+                    categorySnap = transaction.get(categoryRef).get();
+                }
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("name", request.name());
                 updates.put("description", request.description());
@@ -167,6 +175,9 @@ public class ProductService {
                             "changeCount", FieldValue.increment(1),
                             "lastUpdated", new Date()
                     );
+                }
+                if (categoryRef != null && categorySnap != null && categorySnap.exists()) {
+                    transaction.update(categoryRef, "lastModified", new Date());
                 }
                 log.info("Product [{}] updated and analytics [{}] incremented", id, currentIntervalKey);
                 Object currentStatus = productSnap.get("status");
