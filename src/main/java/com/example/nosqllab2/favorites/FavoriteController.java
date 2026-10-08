@@ -2,10 +2,9 @@ package com.example.nosqllab2.favorites;
 
 import com.example.nosqllab2.products.ProductResponse;
 import com.example.nosqllab2.users.User;
-import com.example.nosqllab2.users.UserNotFoundException;
+import com.example.nosqllab2.exceptions.UserNotFoundException;
 import com.example.nosqllab2.users.UserRepository;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

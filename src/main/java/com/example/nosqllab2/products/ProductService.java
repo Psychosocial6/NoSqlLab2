@@ -1,6 +1,6 @@
 package com.example.nosqllab2.products;
 
-import com.basho.riak.client.api.RiakClient;
+import com.example.nosqllab2.exceptions.ProductNotFoundException;
 import com.example.nosqllab2.products.cache.ProductCacheEntry;
 import com.example.nosqllab2.products.cache.ProductCacheRepository;
 import com.google.api.core.ApiFuture;

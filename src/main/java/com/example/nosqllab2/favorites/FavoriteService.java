@@ -1,7 +1,7 @@
 package com.example.nosqllab2.favorites;
 
 import com.example.nosqllab2.products.Product;
-import com.example.nosqllab2.products.ProductNotFoundException;
+import com.example.nosqllab2.exceptions.ProductNotFoundException;
 import com.example.nosqllab2.products.ProductResponse;
 import com.example.nosqllab2.products.ProductRepository;
 import com.example.nosqllab2.operations.OperationService;

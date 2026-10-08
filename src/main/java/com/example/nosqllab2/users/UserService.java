@@ -1,5 +1,7 @@
 package com.example.nosqllab2.users;
 
+import com.example.nosqllab2.exceptions.UserAlreadyExistsException;
+import com.example.nosqllab2.exceptions.UserNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;

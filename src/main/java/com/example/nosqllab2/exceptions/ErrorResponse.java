@@ -1,4 +1,4 @@
-package com.example.nosqllab2.common;
+package com.example.nosqllab2.exceptions;
 
 import java.time.LocalDateTime;
 

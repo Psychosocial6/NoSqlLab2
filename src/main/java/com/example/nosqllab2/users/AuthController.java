@@ -1,4 +1,5 @@
 package com.example.nosqllab2.users;
+import com.example.nosqllab2.exceptions.UserNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;

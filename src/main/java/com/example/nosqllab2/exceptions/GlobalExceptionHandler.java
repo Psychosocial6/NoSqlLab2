@@ -1,8 +1,5 @@
-package com.example.nosqllab2.common;
+package com.example.nosqllab2.exceptions;
 
-import com.example.nosqllab2.products.ProductNotFoundException;
-import com.example.nosqllab2.users.UserAlreadyExistsException;
-import com.example.nosqllab2.users.UserNotFoundException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataAccessException;
