@@ -139,21 +139,23 @@ public class ProductService {
         DocumentReference statsRef = firestore.collection("product_change_stats").document(currentIntervalKey);
 
         try {
-            return firestore.runTransaction(transaction -> {
-                DocumentSnapshot snapshot = transaction.get(productRef).get();
-                if (!snapshot.exists()) {
+            ProductResponse response = firestore.runTransaction(transaction -> {
+                DocumentSnapshot productSnap = transaction.get(productRef).get();
+                DocumentSnapshot statsSnap = transaction.get(statsRef).get();
+                if (!productSnap.exists()) {
                     throw new ProductNotFoundException("Product not found");
                 }
-
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("name", request.name());
                 updates.put("description", request.description());
                 updates.put("price", request.price());
-                updates.put("categoryId", request.categoryId());
-                updates.put("characteristics", request.characteristics());
+                if (request.categoryId() != null) {
+                    updates.put("categoryId", request.categoryId());
+                }
+                if (request.characteristics() != null) {
+                    updates.put("characteristics", request.characteristics());
+                }
                 transaction.update(productRef, updates);
-
-                DocumentSnapshot statsSnap = transaction.get(statsRef).get();
                 if (!statsSnap.exists()) {
                     Map<String, Object> initialStat = new HashMap<>();
                     initialStat.put("intervalKey", currentIntervalKey);
@@ -166,13 +168,16 @@ public class ProductService {
                             "lastUpdated", new Date()
                     );
                 }
-
                 log.info("Product [{}] updated and analytics [{}] incremented", id, currentIntervalKey);
+                Object currentStatus = productSnap.get("status");
+                Date createdAt = productSnap.getDate("createdAt");
 
-                Object currentStatus = snapshot.get("status");
-                Date createdAt = snapshot.getDate("createdAt");
-
-                invalidateCache();
+                String categoryId = request.categoryId() != null
+                        ? request.categoryId()
+                        : productSnap.getString("categoryId");
+                Map<String, Object> characteristics = request.characteristics() != null
+                        ? request.characteristics()
+                        : (Map<String, Object>) productSnap.get("characteristics");
                 return new ProductResponse(
                         id,
                         request.name(),
@@ -180,10 +185,12 @@ public class ProductService {
                         request.price(),
                         currentStatus,
                         createdAt,
-                        request.categoryId(),
-                        request.characteristics()
+                        categoryId,
+                        characteristics
                 );
             }).get();
+            invalidateCache();
+            return response;
 
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
