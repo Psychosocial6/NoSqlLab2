@@ -14,5 +14,4 @@ import java.util.List;
 public class ProductCacheEntry implements Serializable {
     private String cacheKey;
     private List<ProductResponse> products;
-    private long expiresAt;
 }

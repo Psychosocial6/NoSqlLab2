@@ -1,8 +1,9 @@
 package com.example.nosqllab2.products;
 
-import com.example.nosqllab2.exceptions.ProductNotFoundException;
+import com.basho.riak.client.api.RiakClient;
 import com.example.nosqllab2.products.cache.ProductCacheEntry;
 import com.example.nosqllab2.products.cache.ProductCacheRepository;
+import com.example.nosqllab2.exceptions.ProductNotFoundException;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.*;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ import org.springframework.data.domain.Sort;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -25,40 +27,38 @@ public class ProductService {
     private static final String INTERVAL_PATTERN = "yyyy-MM-dd_HH";
 
     private final ProductCacheRepository cacheRepository;
-    private static final String CACHE_KEY_PREFIX = "products:cache:";
-    private static final int CACHE_TTL_MS = 60_000;
 
     public List<ProductResponse> getProducts(String categoryId, String charKey, String charVal, Pageable pageable) {
+        String sortStr = pageable.getSort().isSorted()
+                ? pageable.getSort().stream()
+                .map(order -> order.getProperty() + ":" + order.getDirection().name())
+                .collect(Collectors.joining(","))
+                : "UNSORTED";
+
         String cacheKey = String.format("cat:%s_key:%s_val:%s_p:%d_s:%d_sort:%s",
                 categoryId, charKey, charVal,
                 pageable.getPageNumber(), pageable.getPageSize(),
-                pageable.getSort().toString());
+                sortStr);
 
         Optional<ProductCacheEntry> cachedEntry = cacheRepository.findById(cacheKey);
+
         if (cachedEntry.isPresent()) {
-            ProductCacheEntry entry = cachedEntry.get();
-            if (entry.getExpiresAt() > System.currentTimeMillis()) {
-                log.info("Cache HIT in Riak KV for key: {}", cacheKey);
-                return entry.getProducts();
-            } else {
-                log.info("Cache EXPIRED in Riak KV for key: {}", cacheKey);
-                cacheRepository.delete(cacheKey);
-            }
-        } else {
-            log.info("Cache MISS in Riak KV for key: {}", cacheKey);
+            log.info("Cache HIT in Riak KV for key: {}", cacheKey);
+            return cachedEntry.get().getProducts();
         }
+
+        log.info("Cache MISS in Riak KV for key: {}", cacheKey);
 
         List<ProductResponse> products = fetchProductsFromFirestore(categoryId, charKey, charVal, pageable);
 
         try {
             ProductCacheEntry newEntry = new ProductCacheEntry(
                     cacheKey,
-                    products,
-                    System.currentTimeMillis() + CACHE_TTL_MS
+                    products
             );
             cacheRepository.save(newEntry);
         } catch (Exception e) {
-            log.warn("Failed to write to Riak cache", e);
+            log.error("CRITICAL: Failed to write to Riak cache for key: " + cacheKey, e); // Логируем ERROR с трейсом
         }
 
         return products;
@@ -115,7 +115,6 @@ public class ProductService {
         return ProductResponse.fromEntity(product);
     }
 
-
     public ProductResponse createProduct(ProductRequest productRequest) {
         Product product = new Product(
                 productRequest.name(),
@@ -139,31 +138,21 @@ public class ProductService {
         DocumentReference statsRef = firestore.collection("product_change_stats").document(currentIntervalKey);
 
         try {
-            ProductResponse response = firestore.runTransaction(transaction -> {
-                DocumentSnapshot productSnap = transaction.get(productRef).get();
-                DocumentSnapshot statsSnap = transaction.get(statsRef).get();
-                if (!productSnap.exists()) {
+            return firestore.runTransaction(transaction -> {
+                DocumentSnapshot snapshot = transaction.get(productRef).get();
+                if (!snapshot.exists()) {
                     throw new ProductNotFoundException("Product not found");
                 }
-                DocumentReference categoryRef = null;
-                DocumentSnapshot categorySnap = null;
-                String catId = request.categoryId() != null ? request.categoryId() : productSnap.getString("categoryId");
 
-                if (catId != null && !catId.isBlank()) {
-                    categoryRef = firestore.collection("categories").document(catId);
-                    categorySnap = transaction.get(categoryRef).get();
-                }
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("name", request.name());
                 updates.put("description", request.description());
                 updates.put("price", request.price());
-                if (request.categoryId() != null) {
-                    updates.put("categoryId", request.categoryId());
-                }
-                if (request.characteristics() != null) {
-                    updates.put("characteristics", request.characteristics());
-                }
+                updates.put("categoryId", request.categoryId());
+                updates.put("characteristics", request.characteristics());
                 transaction.update(productRef, updates);
+
+                DocumentSnapshot statsSnap = transaction.get(statsRef).get();
                 if (!statsSnap.exists()) {
                     Map<String, Object> initialStat = new HashMap<>();
                     initialStat.put("intervalKey", currentIntervalKey);
@@ -176,19 +165,13 @@ public class ProductService {
                             "lastUpdated", new Date()
                     );
                 }
-                if (categoryRef != null && categorySnap != null && categorySnap.exists()) {
-                    transaction.update(categoryRef, "lastModified", new Date());
-                }
-                log.info("Product [{}] updated and analytics [{}] incremented", id, currentIntervalKey);
-                Object currentStatus = productSnap.get("status");
-                Date createdAt = productSnap.getDate("createdAt");
 
-                String categoryId = request.categoryId() != null
-                        ? request.categoryId()
-                        : productSnap.getString("categoryId");
-                Map<String, Object> characteristics = request.characteristics() != null
-                        ? request.characteristics()
-                        : (Map<String, Object>) productSnap.get("characteristics");
+                log.info("Product [{}] updated and analytics [{}] incremented", id, currentIntervalKey);
+
+                Object currentStatus = snapshot.get("status");
+                Date createdAt = snapshot.getDate("createdAt");
+
+                invalidateCache();
                 return new ProductResponse(
                         id,
                         request.name(),
@@ -196,12 +179,10 @@ public class ProductService {
                         request.price(),
                         currentStatus,
                         createdAt,
-                        categoryId,
-                        characteristics
+                        request.categoryId(),
+                        request.characteristics()
                 );
             }).get();
-            invalidateCache();
-            return response;
 
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
@@ -209,7 +190,6 @@ public class ProductService {
             throw new RuntimeException(e);
         }
     }
-
 
     public void deleteProductById(String id) {
         Product product = productRepository.findById(id).block();
@@ -219,7 +199,6 @@ public class ProductService {
         invalidateCache();
         productRepository.delete(product).block();
     }
-
 
     private void invalidateCache() {
         try {
