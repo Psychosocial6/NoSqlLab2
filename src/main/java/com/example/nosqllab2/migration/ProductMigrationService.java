@@ -27,21 +27,25 @@ public class ProductMigrationService {
             WriteBatch batch = firestore.batch();
 
             for (DocumentSnapshot doc : documents) {
-                Object statusField = doc.get("status");
-
-                if (statusField instanceof String oldStatusString) {
-                    Map<String, Object> newStatusObject = new HashMap<>();
-                    newStatusObject.put("code", oldStatusString);
-                    newStatusObject.put("updatedAt", new Date());
-                    newStatusObject.put("comment", "Migrated to object");
-
-                    DocumentReference ref = doc.getReference();
-                    batch.update(ref, "status", newStatusObject);
-                    migratedCount++;
-                }
-                else {
+                if (doc.contains("updatedStatus") && doc.get("updatedStatus") != null) {
                     skippedCount++;
+                    continue;
                 }
+
+                String oldStatusString = doc.getString("status");
+                if (oldStatusString == null || oldStatusString.isBlank()) {
+                    oldStatusString = "AVAILABLE";
+                }
+
+                Map<String, Object> newStatusObject = new HashMap<>();
+                newStatusObject.put("code", oldStatusString);
+                newStatusObject.put("updatedAt", new Date());
+                newStatusObject.put("comment", "updatedStatus");
+
+                DocumentReference ref = doc.getReference();
+
+                batch.update(ref, "updatedStatus", newStatusObject);
+                migratedCount++;
             }
 
             if (migratedCount > 0) {

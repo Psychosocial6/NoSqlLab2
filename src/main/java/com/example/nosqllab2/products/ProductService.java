@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -138,11 +139,12 @@ public class ProductService {
         DocumentReference statsRef = firestore.collection("product_change_stats").document(currentIntervalKey);
 
         try {
-            return firestore.runTransaction(transaction -> {
+            ProductResponse response = firestore.runTransaction(transaction -> {
                 DocumentSnapshot snapshot = transaction.get(productRef).get();
                 if (!snapshot.exists()) {
                     throw new ProductNotFoundException("Product not found");
                 }
+                DocumentSnapshot statsSnap = transaction.get(statsRef).get();
 
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("name", request.name());
@@ -152,7 +154,6 @@ public class ProductService {
                 updates.put("characteristics", request.characteristics());
                 transaction.update(productRef, updates);
 
-                DocumentSnapshot statsSnap = transaction.get(statsRef).get();
                 if (!statsSnap.exists()) {
                     Map<String, Object> initialStat = new HashMap<>();
                     initialStat.put("intervalKey", currentIntervalKey);
@@ -168,26 +169,41 @@ public class ProductService {
 
                 log.info("Product [{}] updated and analytics [{}] incremented", id, currentIntervalKey);
 
-                Object currentStatus = snapshot.get("status");
+                ProductStatus status;
+                if (snapshot.contains("updatedStatus") && snapshot.get("updatedStatus") != null) {
+                    Map<String, Object> statusMap = (Map<String, Object>) snapshot.get("updatedStatus");
+                    Date updatedAt = snapshot.getDate("updatedStatus.updatedAt");
+                    status = new ProductStatus(
+                            (String) statusMap.get("code"),
+                            updatedAt,
+                            (String) statusMap.get("comment")
+                    );
+                } else {
+                    String oldStatus = snapshot.getString("status");
+                    status = new ProductStatus(
+                            oldStatus,
+                            Date.from(Instant.EPOCH),
+                            "not updated status"
+                    );
+                }
                 Date createdAt = snapshot.getDate("createdAt");
 
-                invalidateCache();
                 return new ProductResponse(
                         id,
                         request.name(),
                         request.description(),
                         request.price(),
-                        currentStatus,
+                        status,
                         createdAt,
                         request.categoryId(),
                         request.characteristics()
                 );
             }).get();
+            invalidateCache();
+            return response;
 
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException("Failed to update product: " + e.getMessage(), e);
         }
     }
 

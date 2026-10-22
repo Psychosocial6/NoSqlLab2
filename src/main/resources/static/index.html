@@ -129,6 +129,8 @@
             background: #fff;
             padding: 15px 30px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            flex-wrap: wrap;
+            gap: 10px;
         }
         .nav-btn {
             padding: 8px 16px;
@@ -137,6 +139,7 @@
             border-radius: 4px;
             cursor: pointer;
             margin-right: 8px;
+            margin-bottom: 4px;
         }
         .nav-btn.active {
             background: #007bff;
@@ -182,12 +185,46 @@
             display: inline-block;
             margin-bottom: 8px;
         }
+
+        .status-box {
+            border-radius: 4px;
+            padding: 8px 10px;
+            margin: 8px 0;
+            font-size: 12px;
+            background: #eef2f7;
+            border-left: 4px solid #6c757d;
+        }
+        .status-box.status-available {
+            background: #e8f5e9;
+            border-left-color: #28a745;
+        }
+        .status-box.status-migrated {
+            background: #e3f2fd;
+            border-left-color: #007bff;
+        }
+        .status-title {
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-comment {
+            color: #555;
+            margin-top: 3px;
+            font-style: italic;
+        }
+        .status-date {
+            color: #777;
+            margin-top: 2px;
+            font-size: 11px;
+        }
+
         .characteristics-box {
             background: #f8f9fa;
             border: 1px solid #e9ecef;
             border-radius: 4px;
             padding: 8px;
-            margin: 10px 0;
+            margin: 8px 0;
             font-size: 13px;
         }
         .characteristic-row {
@@ -261,6 +298,14 @@
             border-radius: 4px;
             white-space: nowrap;
         }
+
+        .action-box {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            max-width: 600px;
+        }
     </style>
 </head>
 <body>
@@ -282,10 +327,13 @@
         const [favorites, setFavorites] = useState([]);
         const [operations, setOperations] = useState([]);
         const [loadingOps, setLoadingOps] = useState(false);
-
+        const [analyticsFrom, setAnalyticsFrom] = useState('');
+        const [analyticsTo, setAnalyticsTo] = useState('');
+        const [analyticsData, setAnalyticsData] = useState(null);
+        const [migrationResult, setMigrationResult] = useState(null);
+        const [migrating, setMigrating] = useState(false);
         const [form, setForm] = useState({ name: '', email: '', password: '', tokenInput: '' });
         const [error, setError] = useState('');
-
         const [generatedUrl, setGeneratedUrl] = useState(null);
         const [copied, setCopied] = useState(false);
 
@@ -339,6 +387,35 @@
                 console.error('Ошибка загрузки операций', e);
             } finally {
                 setLoadingOps(false);
+            }
+        };
+
+        const loadAnalytics = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/analytics/changes?from=${analyticsFrom.trim()}&to=${analyticsTo.trim()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setAnalyticsData(data || []);
+                }
+            } catch (e) {
+                console.error('Ошибка аналитики', e);
+            }
+        };
+
+        const runMigration = async () => {
+            setMigrating(true);
+            setMigrationResult(null);
+            try {
+                const res = await fetch(`${API_BASE}/migration/status`, { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    setMigrationResult(data);
+                    loadProducts();
+                }
+            } catch (e) {
+                console.error('migration err', e);
+            } finally {
+                setMigrating(false);
             }
         };
 
@@ -514,6 +591,9 @@
                 const res = await fetch(`${API_BASE}/favorite/${product.id}`, { method });
                 if (res.ok) {
                     loadFavorites();
+                } else {
+                    const err = await res.json().catch(() => null);
+                    alert(err?.message || 'Не удалось изменить избранное (возможно, товар недоступен)');
                 }
             } catch (e) {
                 console.error('Ошибка изменения избранного', e);
@@ -533,6 +613,37 @@
                 console.error('Ошибка отправки заявки', e);
                 alert('Не удалось отправить заявку');
             }
+        };
+
+        const renderStatusBox = (status) => {
+            if (!status) return null;
+
+            const code = status.code || (typeof status === 'string' ? status : 'UNKNOWN');
+            const comment = status.comment || '';
+            const updatedAt = status.updatedAt ? new Date(status.updatedAt) : null;
+            const isEpoch = updatedAt && updatedAt.getFullYear() === 1970;
+
+            const isAvailable = code === 'AVAILABLE';
+            const isMigrated = !isEpoch && comment !== 'not updated status';
+
+            let boxClass = 'status-box';
+            if (isAvailable) boxClass += ' status-available';
+            if (isMigrated) boxClass += ' status-migrated';
+
+            return (
+                <div className={boxClass}>
+                    <div className="status-title">
+                        <span>Статус: <b>{code}</b></span>
+                        {isMigrated && <span style={{ fontSize: '10px', color: '#007bff' }}>● объект</span>}
+                    </div>
+                    {comment && <div className="status-comment">{comment}</div>}
+                    {updatedAt && (
+                        <div className="status-date">
+                            {updatedAt.toLocaleString()}
+                        </div>
+                    )}
+                </div>
+            );
         };
 
         if (!currentUser) {
@@ -650,6 +761,18 @@
                             История операций
                         </button>
                         <button
+                            className={`nav-btn ${activeTab === 'analytics' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('analytics')}
+                        >
+                            Аналитика
+                        </button>
+                        <button
+                            className={`nav-btn ${activeTab === 'migration' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('migration')}
+                        >
+                            Миграция
+                        </button>
+                        <button
                             className={`nav-btn ${activeTab === 'profile' ? 'active' : ''}`}
                             onClick={() => setActiveTab('profile')}
                         >
@@ -685,8 +808,7 @@
                                                     )}
                                                     <h3 style={{ margin: '0 0 8px 0' }}>{p.name}</h3>
                                                     <p style={{ color: '#666', margin: '0 0 10px 0' }}>{p.description}</p>
-
-                                                    {/* Вывод гибких характеристик (Map) */}
+                                                    {renderStatusBox(p.status)}
                                                     {p.characteristics && Object.keys(p.characteristics).length > 0 && (
                                                         <div className="characteristics-box">
                                                             {Object.entries(p.characteristics).map(([key, value]) => (
@@ -733,6 +855,8 @@
                                                     <h3 style={{ margin: '0 0 8px 0' }}>{p.name}</h3>
                                                     <p style={{ color: '#666', margin: '0 0 10px 0' }}>{p.description}</p>
 
+                                                    {renderStatusBox(p.status)}
+
                                                     {p.characteristics && Object.keys(p.characteristics).length > 0 && (
                                                         <div className="characteristics-box">
                                                             {Object.entries(p.characteristics).map(([key, value]) => (
@@ -762,10 +886,7 @@
 
                     {activeTab === 'operations' && (
                         <div>
-                            <div>
-                                <h2 style={{ margin: 0 }}>История операций</h2>
-                            </div>
-
+                            <h2 style={{ margin: 0 }}>История операций</h2>
                             {operations.length === 0 ? (
                                 <p style={{ marginTop: 20 }}>История пуста</p>
                             ) : (
@@ -783,6 +904,94 @@
                                     ))}
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {activeTab === 'analytics' && (
+                        <div>
+                            <h2>Аналитика изменений</h2>
+
+                            <div style={{ background: 'white', padding: 20, borderRadius: 8, maxWidth: 420 }}>
+                                <input
+                                    className="input"
+                                    placeholder="От: yyyy-mm-dd_hh"
+                                    value={analyticsFrom}
+                                    onChange={e => setAnalyticsFrom(e.target.value)}
+                                />
+                                <input
+                                    className="input"
+                                    placeholder="До: yyyy-mm-dd_hh"
+                                    value={analyticsTo}
+                                    onChange={e => setAnalyticsTo(e.target.value)}
+                                />
+                                <button className="btn-login" style={{ width: '100%' }} onClick={loadAnalytics}>
+                                    Показать
+                                </button>
+                            </div>
+
+                            {analyticsData !== null && (
+                                <div style={{ marginTop: 20, maxWidth: 420 }}>
+                                    {analyticsData.length === 0 ? (
+                                        <p style={{ color: '#666' }}>Данных за выбранный период нет</p>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            {analyticsData.map(item => {
+                                                let readableTime = item.intervalKey;
+                                                if (item.intervalKey && item.intervalKey.includes('_')) {
+                                                    const [d, h] = item.intervalKey.split('_');
+                                                    const hour = parseInt(h, 10);
+                                                    const next = (hour + 1) % 24;
+                                                    const pad = n => String(n).padStart(2, '0');
+                                                    readableTime = `${d} с ${pad(hour)}:00 до ${pad(next)}:00`;
+                                                }
+
+                                                return (
+                                                    <div
+                                                        key={item.intervalKey}
+                                                        style={{
+                                                            background: 'white',
+                                                            padding: 12,
+                                                            borderRadius: 6,
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            alignItems: 'center',
+                                                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                                        }}
+                                                    >
+                                                        <span><b>{readableTime}</b></span>
+                                                        <span>Обновлений: <b>{item.changeCount}</b></span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'migration' && (
+                        <div>
+                            <h2>Миграция данных</h2>
+                            <div className="action-box">
+                                <button
+                                    className="btn-register"
+                                    style={{ width: '100%', padding: '12px' }}
+                                    onClick={runMigration}
+                                    disabled={migrating}
+                                >
+                                    Выполнить миграцию
+                                </button>
+
+                                {migrationResult && (
+                                    <div style={{ marginTop: 20, padding: 15, background: '#e8f5e9', borderRadius: 6, border: '1px solid #c8e6c9' }}>
+                                        <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Результат:</h4>
+                                        <div>Статус: <b>{migrationResult.status}</b></div>
+                                        <div>Мигрировано: <b>{migrationResult.migratedCount}</b></div>
+                                        <div>Пропущено: <b>{migrationResult.skippedCount}</b></div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 

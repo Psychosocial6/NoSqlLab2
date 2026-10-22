@@ -8,7 +8,7 @@ public record ProductResponse(
         String name,
         String description,
         Double price,
-        Object status,
+        ProductStatus status,
         Date createdAt,
         String categoryId,
         Map<String, Object> characteristics
@@ -19,7 +19,7 @@ public record ProductResponse(
                 product.getName(),
                 product.getDescription(),
                 product.getPrice(),
-                product.getStatus(),
+                product.getActualStatus(),
                 product.getCreatedAt(),
                 product.getCategoryId(),
                 product.getCharacteristics()

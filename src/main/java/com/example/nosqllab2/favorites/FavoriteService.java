@@ -5,8 +5,10 @@ import com.example.nosqllab2.exceptions.ProductNotFoundException;
 import com.example.nosqllab2.products.ProductResponse;
 import com.example.nosqllab2.products.ProductRepository;
 import com.example.nosqllab2.operations.OperationService;
+import com.example.nosqllab2.products.ProductStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Objects;
@@ -20,35 +22,39 @@ public class FavoriteService {
     private final OperationService operationService;
 
     public List<ProductResponse> getUsersFavorites(String userId) {
-        List<UserFavorite> favorites = favoriteRepository.findByUserId(userId)
+        return favoriteRepository.findByUserId(userId)
+                .flatMap(fav -> productRepository.findById(fav.getProductId()))
+                .map(ProductResponse::fromEntity)
                 .collectList()
                 .block();
-
-        if (favorites == null || favorites.isEmpty()) {
-            return List.of();
-        }
-
-        return favorites.stream()
-                .map(fav -> productRepository.findById(fav.getProductId()).block())
-                .filter(Objects::nonNull)
-                .map(ProductResponse::fromEntity)
-                .toList();
     }
 
     public void addFavorite(String userId, String productId) {
-        Product product = productRepository.findById(productId).block();
-        if (product == null) {
-            throw new ProductNotFoundException("Product not found");
-        }
-
         String id = userId + "_" + productId;
-        Boolean exists = favoriteRepository.existsById(id).block();
+        productRepository.findById(productId)
+                .switchIfEmpty(Mono.error(new ProductNotFoundException("product not found")))
+                .flatMap(product -> {
+                    ProductStatus currentStatus = product.getActualStatus();
+                    if (!"AVAILABLE".equalsIgnoreCase(currentStatus.code())) {
+                        return Mono.error(new IllegalStateException(
+                                "cannot add product to fav, status: " + currentStatus.code()
+                        ));
+                    }
 
-        if (Boolean.FALSE.equals(exists)) {
-            favoriteRepository.save(new UserFavorite(userId, productId)).block();
-        }
+                    return favoriteRepository.existsById(id);
+                })
+                .flatMap(exists -> {
+                    if (!exists) {
+                        return favoriteRepository.save(new UserFavorite(userId, productId));
+                    }
+                    return Mono.empty();
+                })
+                .block();
 
-        operationService.logOperation(userId, String.format("User (id=%s) added product (id=%s) to favs", userId, productId));
+        operationService.logOperation(
+                userId,
+                String.format("User (id=%s) added product (id=%s) to favs", userId, productId)
+        );
     }
 
     public void deleteFavorite(String userId, String productId) {

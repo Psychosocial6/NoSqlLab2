@@ -36,11 +36,9 @@ public class OperationService {
         }
         long startPostgres = System.nanoTime();
         List<OperationLogDTO> userOps = logRepository.findByUserIdOrderByOperationTimeDesc(userId)
-                .collectList()
-                .block()
-                .stream()
                 .map(OperationLogDTO::fromEntity)
-                .toList();
+                .collectList()
+                .block();
         long pgDurationNs = System.nanoTime() - startPostgres;
         log.info("cache miss: {} ms ({} ns)", pgDurationNs / 1_000_000.0, pgDurationNs);
         cacheRepository.save(new OperationCache(cacheKey, userOps));
