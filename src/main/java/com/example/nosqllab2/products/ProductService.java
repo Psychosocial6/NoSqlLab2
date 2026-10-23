@@ -33,7 +33,7 @@ public class ProductService {
 
     private static final long CACHE_TTL_MS = 60_000;
 
-    public List<ProductResponse> getProducts(String categoryId, String charKey, String charVal, Pageable pageable) {
+    public List<ProductResponse> getProducts(String categoryId, String specField, String specVal, String statusFilter, Pageable pageable) {
         String normalizedCatId = (categoryId != null && !categoryId.isBlank()) ? categoryId : "all";
 
         String sortStr = pageable.getSort().isSorted()
@@ -42,8 +42,8 @@ public class ProductService {
                 .collect(Collectors.joining(","))
                 : "UNSORTED";
 
-        String cacheKey = String.format("cat:%s_key:%s_val:%s_p:%d_s:%d_sort:%s",
-                normalizedCatId, charKey, charVal,
+        String cacheKey = String.format("cat:%s_f:%s_v:%s_st:%s_p:%d_s:%d_sort:%s",
+                normalizedCatId, specField, specVal, statusFilter,
                 pageable.getPageNumber(), pageable.getPageSize(),
                 sortStr);
 
@@ -63,7 +63,7 @@ public class ProductService {
             log.info("Cache MISS in Riak KV for key: {}", cacheKey);
         }
 
-        List<ProductResponse> products = fetchProductsFromFirestore(categoryId, charKey, charVal, pageable);
+        List<ProductResponse> products = fetchProductsFromFirestore(categoryId, specField, specVal, statusFilter, pageable);
 
         try {
             ProductCacheEntry newEntry = new ProductCacheEntry(
@@ -86,7 +86,7 @@ public class ProductService {
         return products;
     }
 
-    private List<ProductResponse> fetchProductsFromFirestore(String categoryId, String charKey, String charVal, Pageable pageable) {
+    private List<ProductResponse> fetchProductsFromFirestore(String categoryId, String specField, String specVal, String statusFilter, Pageable pageable) {
         try {
             CollectionReference productsRef = firestore.collection("products");
             Query query = productsRef;
@@ -94,8 +94,13 @@ public class ProductService {
             if (categoryId != null && !categoryId.isBlank()) {
                 query = query.whereEqualTo("categoryId", categoryId);
             }
-            if (charKey != null && !charKey.isBlank() && charVal != null && !charVal.isBlank()) {
-                query = query.whereEqualTo("characteristics." + charKey, charVal);
+
+            if (statusFilter != null && !statusFilter.isBlank()) {
+                query = query.whereEqualTo("status", statusFilter);
+            }
+
+            if (specField != null && !specField.isBlank() && specVal != null && !specVal.isBlank()) {
+                query = query.whereEqualTo("specifications." + specField, specVal);
             }
 
             if (pageable.getSort().isSorted()) {
@@ -104,7 +109,11 @@ public class ProductService {
                     query = query.orderBy(order.getProperty(), direction);
                 }
             } else {
-                query = query.orderBy("name", Query.Direction.ASCENDING);
+                if (statusFilter != null && !statusFilter.isBlank()) {
+                    query = query.orderBy("createdAt", Query.Direction.DESCENDING);
+                } else {
+                    query = query.orderBy("name", Query.Direction.ASCENDING);
+                }
             }
 
             query = query.limit(pageable.getPageSize());
@@ -128,7 +137,7 @@ public class ProductService {
                         status,
                         product.getCreatedAt(),
                         product.getCategoryId(),
-                        product.getCharacteristics()
+                        product.getSpecifications()
                 );
             }).toList();
 
@@ -156,7 +165,7 @@ public class ProductService {
                 productRequest.price()
         );
         product.setCategoryId(productRequest.categoryId());
-        product.setCharacteristics(productRequest.characteristics());
+        product.setSpecifications(productRequest.specifications());
 
         Product saved = productRepository.save(product).block();
 
@@ -186,7 +195,7 @@ public class ProductService {
                 updates.put("description", request.description());
                 updates.put("price", request.price());
                 updates.put("categoryId", request.categoryId());
-                updates.put("characteristics", request.characteristics());
+                updates.put("specifications", request.specifications());
                 transaction.update(productRef, updates);
 
                 if (!statsSnap.exists()) {
@@ -204,12 +213,23 @@ public class ProductService {
 
                 log.info("Product [{}] updated and analytics [{}] incremented", id, currentIntervalKey);
 
-                ProductStatus status = Optional.ofNullable(snapshot.get("updatedStatus", ProductStatus.class))
-                        .orElseGet(() -> new ProductStatus(
-                                snapshot.getString("status"),
-                                Date.from(Instant.EPOCH),
-                                "not updated status"
-                        ));
+                ProductStatus status;
+                if (snapshot.contains("updatedStatus") && snapshot.get("updatedStatus") != null) {
+                    Map<String, Object> statusMap = (Map<String, Object>) snapshot.get("updatedStatus");
+                    Date updatedAt = snapshot.getDate("updatedStatus.updatedAt");
+                    status = new ProductStatus(
+                            (String) statusMap.get("code"),
+                            updatedAt,
+                            (String) statusMap.get("comment")
+                    );
+                } else {
+                    String oldStatus = snapshot.getString("status");
+                    status = new ProductStatus(
+                            oldStatus,
+                            Date.from(Instant.EPOCH),
+                            "not updated status"
+                    );
+                }
                 Date createdAt = snapshot.getDate("createdAt");
 
                 return new ProductResponse(
@@ -220,7 +240,7 @@ public class ProductService {
                         status,
                         createdAt,
                         request.categoryId(),
-                        request.characteristics()
+                        request.specifications()
                 );
             }).get();
 
@@ -243,6 +263,7 @@ public class ProductService {
 
         invalidateCacheForCategory(categoryId);
     }
+
 
     private String getIndexKey(String categoryId) {
         String cat = (categoryId != null && !categoryId.isBlank()) ? categoryId : "all";

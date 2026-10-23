@@ -27,7 +27,7 @@ public class Product {
     private Date createdAt;
 
     private String categoryId;
-    private Map<String, Object> characteristics;
+    private ProductSpecifications specifications;
 
     public Product(String name, String description, Double price) {
         this.id = String.valueOf(UUID.randomUUID());
