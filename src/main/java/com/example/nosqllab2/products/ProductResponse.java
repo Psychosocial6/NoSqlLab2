@@ -1,7 +1,6 @@
 package com.example.nosqllab2.products;
 
 import java.util.Date;
-import java.util.Map;
 
 public record ProductResponse(
         String id,
@@ -11,7 +10,7 @@ public record ProductResponse(
         ProductStatus status,
         Date createdAt,
         String categoryId,
-        Map<String, Object> characteristics
+        ProductSpecifications specifications
 ) {
     public static ProductResponse fromEntity(Product product) {
         return new ProductResponse(
@@ -22,7 +21,7 @@ public record ProductResponse(
                 product.getActualStatus(),
                 product.getCreatedAt(),
                 product.getCategoryId(),
-                product.getCharacteristics()
+                product.getSpecifications()
         );
     }
 }

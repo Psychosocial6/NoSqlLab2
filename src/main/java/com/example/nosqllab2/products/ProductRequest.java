@@ -3,7 +3,6 @@ package com.example.nosqllab2.products;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-import java.util.Map;
 
 public record ProductRequest(
         @NotEmpty(message = "name required")
@@ -14,6 +13,6 @@ public record ProductRequest(
         @Positive(message = "price must be positive")
         Double price,
         String categoryId,
-        Map<String, Object> characteristics
+        ProductSpecifications specifications
 ) {
 }

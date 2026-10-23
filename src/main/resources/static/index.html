@@ -161,6 +161,56 @@
             max-width: 1000px;
             margin: 0 auto;
         }
+        
+        /* Стили панели фильтрации */
+        .filter-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .filter-group label {
+            font-size: 12px;
+            color: #666;
+            font-weight: bold;
+        }
+        .filter-group select, .filter-group input {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+        }
+        .btn-filter {
+            padding: 9px 16px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-filter:hover { background: #218838; }
+        .btn-clear {
+            padding: 9px 16px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-clear:hover { background: #5a6268; }
+
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -337,6 +387,14 @@
         const [generatedUrl, setGeneratedUrl] = useState(null);
         const [copied, setCopied] = useState(false);
 
+        // Состояния для фильтрации и поиска
+        const [filterCategoryId, setFilterCategoryId] = useState('');
+        const [filterStatus, setFilterStatus] = useState('');
+        const [filterSpecField, setFilterSpecField] = useState('brand'); // По умолчанию бренд
+        const [filterSpecVal, setFilterSpecVal] = useState('');
+        const [sortBy, setSortBy] = useState('name');
+        const [sortDirection, setSortDirection] = useState('asc');
+
         useEffect(() => {
             if (currentUser) {
                 loadProducts();
@@ -352,7 +410,16 @@
 
         const loadProducts = async () => {
             try {
-                const res = await fetch(`${API_BASE}/product`);
+                let url = `${API_BASE}/product?sortBy=${sortBy}&direction=${sortDirection}`;
+                if (filterCategoryId.trim()) url += `&categoryId=${encodeURIComponent(filterCategoryId.trim())}`;
+                if (filterStatus.trim()) url += `&status=${encodeURIComponent(filterStatus.trim())}`;
+                
+                // Передаем спецификацию только если заполнено значение
+                if (filterSpecVal.trim()) {
+                    url += `&specField=${encodeURIComponent(filterSpecField)}&specVal=${encodeURIComponent(filterSpecVal.trim())}`;
+                }
+
+                const res = await fetch(url);
                 if (res.ok) {
                     const data = await res.json();
                     setProducts(data || []);
@@ -360,6 +427,21 @@
             } catch (e) {
                 console.error('Ошибка загрузки товаров', e);
             }
+        };
+
+        const handleApplyFilters = (e) => {
+            e.preventDefault();
+            loadProducts();
+        };
+
+        const handleResetFilters = () => {
+            setFilterCategoryId('');
+            setFilterStatus('');
+            setFilterSpecField('brand');
+            setFilterSpecVal('');
+            setSortBy('name');
+            setSortDirection('asc');
+            setTimeout(loadProducts, 0);
         };
 
         const loadFavorites = async () => {
@@ -799,7 +881,75 @@
                     {activeTab === 'catalog' && (
                         <div>
                             <h2>Каталог товаров</h2>
-                            {products.length === 0 ? <p>Товаров нет</p> : (
+
+                            {/* Панель фильтрации, поиска и сортировки */}
+                            <form className="filter-panel" onSubmit={handleApplyFilters}>
+                                <div className="filter-group">
+                                    <label>ID Категории</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Например: cat1"
+                                        value={filterCategoryId}
+                                        onChange={e => setFilterCategoryId(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="filter-group">
+                                    <label>Состояние (Статус)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Например: AVAILABLE"
+                                        value={filterStatus}
+                                        onChange={e => setFilterStatus(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="filter-group">
+                                    <label>Характеристика (Поле)</label>
+                                    <select
+                                        value={filterSpecField}
+                                        onChange={e => setFilterSpecField(e.target.value)}
+                                    >
+                                        <option value="brand">Бренд (brand)</option>
+                                        <option value="color">Цвет (color)</option>
+                                        <option value="material">Материал (material)</option>
+                                    </select>
+                                </div>
+
+                                <div className="filter-group">
+                                    <label>Значение характеристики</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Значение..."
+                                        value={filterSpecVal}
+                                        onChange={e => setFilterSpecVal(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="filter-group">
+                                    <label>Сортировка по</label>
+                                    <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                                        <option value="name">Названию (name)</option>
+                                        <option value="price">Цене (price)</option>
+                                        <option value="createdAt">Дате создания (createdAt)</option>
+                                    </select>
+                                </div>
+
+                                <div className="filter-group">
+                                    <label>Порядок</label>
+                                    <select value={sortDirection} onChange={e => setSortDirection(e.target.value)}>
+                                        <option value="asc">По возрастанию (ASC)</option>
+                                        <option value="desc">По убыванию (DESC)</option>
+                                    </select>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button type="submit" className="btn-filter" style={{ flex: 1 }}>Найти</button>
+                                    <button type="button" className="btn-clear" onClick={handleResetFilters}>Сброс</button>
+                                </div>
+                            </form>
+
+                            {products.length === 0 ? <p>Товаров не найдено</p> : (
                                 <div className="grid">
                                     {products.map(p => {
                                         const fav = isFavorite(p.id);
@@ -812,9 +962,9 @@
                                                     <h3 style={{ margin: '0 0 8px 0' }}>{p.name}</h3>
                                                     <p style={{ color: '#666', margin: '0 0 10px 0' }}>{p.description}</p>
                                                     {renderStatusBox(p.status)}
-                                                    {p.characteristics && Object.keys(p.characteristics).length > 0 && (
+                                                    {p.specifications && Object.keys(p.specifications).length > 0 && (
                                                         <div className="characteristics-box">
-                                                            {Object.entries(p.characteristics).map(([key, value]) => (
+                                                            {Object.entries(p.specifications).map(([key, value]) => (
                                                                 <div key={key} className="characteristic-row">
                                                                     <span className="char-key">{key}:</span>
                                                                     <span className="char-val">
@@ -860,9 +1010,9 @@
 
                                                     {renderStatusBox(p.status)}
 
-                                                    {p.characteristics && Object.keys(p.characteristics).length > 0 && (
+                                                    {p.specifications && Object.keys(p.specifications).length > 0 && (
                                                         <div className="characteristics-box">
-                                                            {Object.entries(p.characteristics).map(([key, value]) => (
+                                                            {Object.entries(p.specifications).map(([key, value]) => (
                                                                 <div key={key} className="characteristic-row">
                                                                     <span className="char-key">{key}:</span>
                                                                     <span className="char-val">

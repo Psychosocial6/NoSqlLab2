@@ -2,7 +2,6 @@ package com.example.nosqllab2.products;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -24,8 +23,9 @@ public class ProductController {
     @GetMapping
     public ResponseEntity<List<ProductResponse>> getProducts(
             @RequestParam(required = false) String categoryId,
-            @RequestParam(required = false) String charKey,
-            @RequestParam(required = false) String charVal,
+            @RequestParam(required = false) String specField,
+            @RequestParam(required = false) String specVal,
+            @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "name") String sortBy,
@@ -34,7 +34,7 @@ public class ProductController {
         Sort sort = "desc".equalsIgnoreCase(direction) ? Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        List<ProductResponse> products = productService.getProducts(categoryId, charKey, charVal, pageable);
+        List<ProductResponse> products = productService.getProducts(categoryId, specField, specVal, status, pageable);
         return ResponseEntity.ok(products);
     }
 
@@ -49,7 +49,6 @@ public class ProductController {
         ProductResponse productResponse = productService.createProduct(productRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(productResponse);
     }
-
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProductById(@PathVariable @NotNull(message = "id required") String id) {
