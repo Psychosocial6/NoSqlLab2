@@ -96,7 +96,19 @@ public class ProductService {
 
             return documents.stream().map(doc -> {
                 Product product = doc.toObject(Product.class);
-                return ProductResponse.fromEntity(product);
+                ProductStatus status = Optional.ofNullable(doc.get("updatedStatus", ProductStatus.class))
+                        .orElseGet(product::getActualStatus);
+
+                return new ProductResponse(
+                        doc.getId(),
+                        product.getName(),
+                        product.getDescription(),
+                        product.getPrice(),
+                        status,
+                        product.getCreatedAt(),
+                        product.getCategoryId(),
+                        product.getCharacteristics()
+                );
             }).toList();
 
         } catch (InterruptedException e) {
@@ -169,23 +181,12 @@ public class ProductService {
 
                 log.info("Product [{}] updated and analytics [{}] incremented", id, currentIntervalKey);
 
-                ProductStatus status;
-                if (snapshot.contains("updatedStatus") && snapshot.get("updatedStatus") != null) {
-                    Map<String, Object> statusMap = (Map<String, Object>) snapshot.get("updatedStatus");
-                    Date updatedAt = snapshot.getDate("updatedStatus.updatedAt");
-                    status = new ProductStatus(
-                            (String) statusMap.get("code"),
-                            updatedAt,
-                            (String) statusMap.get("comment")
-                    );
-                } else {
-                    String oldStatus = snapshot.getString("status");
-                    status = new ProductStatus(
-                            oldStatus,
-                            Date.from(Instant.EPOCH),
-                            "not updated status"
-                    );
-                }
+                ProductStatus status = Optional.ofNullable(snapshot.get("updatedStatus", ProductStatus.class))
+                        .orElseGet(() -> new ProductStatus(
+                                snapshot.getString("status"),
+                                Date.from(Instant.EPOCH),
+                                "not updated status"
+                        ));
                 Date createdAt = snapshot.getDate("createdAt");
 
                 return new ProductResponse(

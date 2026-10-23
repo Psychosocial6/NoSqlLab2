@@ -1,5 +1,7 @@
 package com.example.nosqllab2.migration;
 
+import com.example.nosqllab2.products.cache.ProductCacheEntry;
+import com.example.nosqllab2.products.cache.ProductCacheRepository;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
@@ -17,6 +19,7 @@ import java.util.*;
 public class ProductMigrationService {
 
     private final Firestore firestore;
+    private final ProductCacheRepository cacheRepository;
 
     public Map<String, Object> migrateProductStatus() {
         try {
@@ -51,6 +54,7 @@ public class ProductMigrationService {
             if (migratedCount > 0) {
                 batch.commit().get();
             }
+            invalidateCache();
 
             log.info("Migration finished: migrated={}, skipped={}", migratedCount, skippedCount);
 
@@ -62,6 +66,18 @@ public class ProductMigrationService {
 
         } catch (Exception e) {
             throw new RuntimeException("Migration failed: " + e.getMessage(), e);
+        }
+    }
+
+    private void invalidateCache() {
+        try {
+            List<ProductCacheEntry> allCached = cacheRepository.findAll();
+            for (ProductCacheEntry entry : allCached) {
+                cacheRepository.delete(entry.getCacheKey());
+            }
+            log.info("cache invalidated");
+        } catch (Exception e) {
+            log.warn("failed to invalidate cache", e);
         }
     }
 }

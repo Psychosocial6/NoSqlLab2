@@ -1,10 +1,16 @@
 package com.example.nosqllab2.products;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.util.Date;
 
-public record ProductStatus(
-        String code,
-        Date updatedAt,
-        String comment
-) {
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class ProductStatus {
+    private String code;
+    private Date updatedAt;
+    private String comment;
 }

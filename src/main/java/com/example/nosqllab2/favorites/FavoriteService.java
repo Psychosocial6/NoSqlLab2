@@ -1,6 +1,5 @@
 package com.example.nosqllab2.favorites;
 
-import com.example.nosqllab2.products.Product;
 import com.example.nosqllab2.exceptions.ProductNotFoundException;
 import com.example.nosqllab2.products.ProductResponse;
 import com.example.nosqllab2.products.ProductRepository;
@@ -11,7 +10,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
-import java.util.Objects;
 
 @RequiredArgsConstructor
 @Service
@@ -35,9 +33,9 @@ public class FavoriteService {
                 .switchIfEmpty(Mono.error(new ProductNotFoundException("product not found")))
                 .flatMap(product -> {
                     ProductStatus currentStatus = product.getActualStatus();
-                    if (!"AVAILABLE".equalsIgnoreCase(currentStatus.code())) {
+                    if (!"AVAILABLE".equalsIgnoreCase(currentStatus.getCode())) {
                         return Mono.error(new IllegalStateException(
-                                "cannot add product to fav, status: " + currentStatus.code()
+                                "cannot add product to fav, status: " + currentStatus.getCode()
                         ));
                     }
 

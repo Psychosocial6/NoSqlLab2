@@ -622,19 +622,22 @@
             const comment = status.comment || '';
             const updatedAt = status.updatedAt ? new Date(status.updatedAt) : null;
             const isEpoch = updatedAt && updatedAt.getFullYear() === 1970;
-
             const isAvailable = code === 'AVAILABLE';
-            const isMigrated = !isEpoch && comment !== 'not updated status';
 
-            let boxClass = 'status-box';
-            if (isAvailable) boxClass += ' status-available';
-            if (isMigrated) boxClass += ' status-migrated';
+            if (isEpoch) {
+                return (
+                    <div className={`status-box ${isAvailable ? 'status-available' : ''}`}>
+                        <div className="status-title">
+                            <span>Статус: <b>{code}</b></span>
+                        </div>
+                    </div>
+                );
+            }
 
             return (
-                <div className={boxClass}>
+                <div className={`status-box status-migrated ${isAvailable ? 'status-available' : ''}`}>
                     <div className="status-title">
                         <span>Статус: <b>{code}</b></span>
-                        {isMigrated && <span style={{ fontSize: '10px', color: '#007bff' }}>● объект</span>}
                     </div>
                     {comment && <div className="status-comment">{comment}</div>}
                     {updatedAt && (
