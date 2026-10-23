@@ -1,6 +1,7 @@
 package com.example.nosqllab2.products;
 
-import com.basho.riak.client.api.RiakClient;
+import com.example.nosqllab2.products.cache.CacheIndexEntry;
+import com.example.nosqllab2.products.cache.CacheIndexRepository;
 import com.example.nosqllab2.products.cache.ProductCacheEntry;
 import com.example.nosqllab2.products.cache.ProductCacheRepository;
 import com.example.nosqllab2.exceptions.ProductNotFoundException;
@@ -28,8 +29,13 @@ public class ProductService {
     private static final String INTERVAL_PATTERN = "yyyy-MM-dd_HH";
 
     private final ProductCacheRepository cacheRepository;
+    private final CacheIndexRepository indexRepository;
+
+    private static final long CACHE_TTL_MS = 60_000;
 
     public List<ProductResponse> getProducts(String categoryId, String charKey, String charVal, Pageable pageable) {
+        String normalizedCatId = (categoryId != null && !categoryId.isBlank()) ? categoryId : "all";
+
         String sortStr = pageable.getSort().isSorted()
                 ? pageable.getSort().stream()
                 .map(order -> order.getProperty() + ":" + order.getDirection().name())
@@ -37,29 +43,44 @@ public class ProductService {
                 : "UNSORTED";
 
         String cacheKey = String.format("cat:%s_key:%s_val:%s_p:%d_s:%d_sort:%s",
-                categoryId, charKey, charVal,
+                normalizedCatId, charKey, charVal,
                 pageable.getPageNumber(), pageable.getPageSize(),
                 sortStr);
 
         Optional<ProductCacheEntry> cachedEntry = cacheRepository.findById(cacheKey);
 
         if (cachedEntry.isPresent()) {
-            log.info("Cache HIT in Riak KV for key: {}", cacheKey);
-            return cachedEntry.get().getProducts();
+            ProductCacheEntry entry = cachedEntry.get();
+            if (entry.getExpiresAt() > System.currentTimeMillis()) {
+                log.info("Cache HIT in Riak KV for key: {}", cacheKey);
+                return entry.getProducts();
+            } else {
+                log.info("Cache EXPIRED in Riak KV for key: {}", cacheKey);
+                cacheRepository.delete(cacheKey);
+                removeKeyFromIndex(normalizedCatId, cacheKey);
+            }
+        } else {
+            log.info("Cache MISS in Riak KV for key: {}", cacheKey);
         }
-
-        log.info("Cache MISS in Riak KV for key: {}", cacheKey);
 
         List<ProductResponse> products = fetchProductsFromFirestore(categoryId, charKey, charVal, pageable);
 
         try {
             ProductCacheEntry newEntry = new ProductCacheEntry(
                     cacheKey,
-                    products
+                    normalizedCatId,
+                    products,
+                    System.currentTimeMillis() + CACHE_TTL_MS
             );
             cacheRepository.save(newEntry);
+
+            addKeyToIndex(normalizedCatId, cacheKey);
+            if (!"all".equals(normalizedCatId)) {
+                addKeyToIndex("all", cacheKey);
+            }
+
         } catch (Exception e) {
-            log.error("CRITICAL: Failed to write to Riak cache for key: " + cacheKey, e); // Логируем ERROR с трейсом
+            log.error("CRITICAL: Failed to write to Riak cache for key: " + cacheKey, e);
         }
 
         return products;
@@ -138,7 +159,9 @@ public class ProductService {
         product.setCharacteristics(productRequest.characteristics());
 
         Product saved = productRepository.save(product).block();
-        invalidateCache();
+
+        invalidateCacheForCategory(productRequest.categoryId());
+
         return ProductResponse.fromEntity(saved);
     }
 
@@ -200,7 +223,8 @@ public class ProductService {
                         request.characteristics()
                 );
             }).get();
-            invalidateCache();
+
+            invalidateCacheForCategory(request.categoryId());
             return response;
 
         } catch (InterruptedException | ExecutionException e) {
@@ -213,19 +237,70 @@ public class ProductService {
         if (product == null) {
             throw new ProductNotFoundException("Product not found");
         }
-        invalidateCache();
+
+        String categoryId = product.getCategoryId();
         productRepository.delete(product).block();
+
+        invalidateCacheForCategory(categoryId);
     }
 
-    private void invalidateCache() {
+    private String getIndexKey(String categoryId) {
+        String cat = (categoryId != null && !categoryId.isBlank()) ? categoryId : "all";
+        return "idx:cat:" + cat;
+    }
+
+    private synchronized void addKeyToIndex(String categoryId, String cacheKey) {
+        String indexKey = getIndexKey(categoryId);
         try {
-            List<ProductCacheEntry> allCached = cacheRepository.findAll();
-            for (ProductCacheEntry entry : allCached) {
-                cacheRepository.delete(entry.getCacheKey());
-            }
-            log.info("Riak cache successfully invalidated.");
+            Optional<CacheIndexEntry> indexEntry = indexRepository.findById(indexKey);
+            CacheIndexEntry entry = indexEntry.orElseGet(() -> new CacheIndexEntry(indexKey, new HashSet<>()));
+
+            entry.getCacheKeys().add(cacheKey);
+            indexRepository.save(entry);
+
         } catch (Exception e) {
-            log.warn("Failed to invalidate cache in Riak", e);
+            log.warn("Failed to update cache index for category: {}", categoryId, e);
+        }
+    }
+
+    private synchronized void removeKeyFromIndex(String categoryId, String cacheKey) {
+        String indexKey = getIndexKey(categoryId);
+        try {
+            Optional<CacheIndexEntry> indexEntry = indexRepository.findById(indexKey);
+            if (indexEntry.isPresent()) {
+                CacheIndexEntry entry = indexEntry.get();
+                entry.getCacheKeys().remove(cacheKey);
+                indexRepository.save(entry);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to remove key from cache index for category: {}", categoryId, e);
+        }
+    }
+
+    private void invalidateCacheForCategory(String categoryId) {
+        String targetCat = (categoryId != null && !categoryId.isBlank()) ? categoryId : "all";
+
+        clearIndexAndAssociatedCache(targetCat);
+
+        if (!"all".equals(targetCat)) {
+            clearIndexAndAssociatedCache("all");
+        }
+    }
+
+    private void clearIndexAndAssociatedCache(String categoryId) {
+        String indexKey = getIndexKey(categoryId);
+        try {
+            Optional<CacheIndexEntry> indexEntry = indexRepository.findById(indexKey);
+            if (indexEntry.isPresent() && indexEntry.get().getCacheKeys() != null) {
+                for (String actualCacheKey : indexEntry.get().getCacheKeys()) {
+                    cacheRepository.delete(actualCacheKey);
+                    log.info("Granular cache deleted for key: {}", actualCacheKey);
+                }
+                indexRepository.delete(indexKey);
+                log.info("Cache index deleted for category/scope: {}", categoryId);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to clear cache index for category: {}", categoryId, e);
         }
     }
 }
