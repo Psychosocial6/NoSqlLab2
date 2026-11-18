@@ -1,7 +1,9 @@
 package com.example.nosqllab2.exceptions;
 
-public class ProductNotFoundException extends RuntimeException {
+import org.springframework.http.HttpStatus;
+
+public class ProductNotFoundException extends ApplicationException {
     public ProductNotFoundException(String message) {
-        super(message);
+        super(HttpStatus.NOT_FOUND, message);
     }
 }

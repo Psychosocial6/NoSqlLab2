@@ -1,16 +1,13 @@
 package com.example.nosqllab2.users;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 public record UserRequest(
-        @NotEmpty(message = "name required")
-        String name,
-        @Pattern(
-                regexp = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,6}$",
-                message = "wrong email format"
-        )
-        String email,
-        @NotEmpty(message = "password required")
-        String password) {
+        @NotBlank @Size(max = 128) String name,
+        @NotBlank @Email @Size(max = 254) String email,
+        @NotEmpty @Size(max = 1024) String password
+) {
 }

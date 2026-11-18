@@ -1,83 +1,93 @@
 package com.example.nosqllab2.migration;
 
-import com.example.nosqllab2.products.cache.ProductCacheEntry;
-import com.example.nosqllab2.products.cache.ProductCacheRepository;
+import com.example.nosqllab2.products.Product;
+import com.example.nosqllab2.products.ProductRepository;
+import com.example.nosqllab2.products.ProductStatus;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.cloud.firestore.FieldMask;
+import com.google.cloud.firestore.FieldPath;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
-import com.google.cloud.firestore.WriteBatch;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
-@Slf4j
+import static com.example.nosqllab2.storage.FirestoreCalls.await;
+
 @RequiredArgsConstructor
 @Service
 public class ProductMigrationService {
+    private static final int BATCH_SIZE = 100;
+    private static final String[] FIELDS = {"status", "updatedStatus", "categoryId"};
 
     private final Firestore firestore;
-    private final ProductCacheRepository cacheRepository;
+    private final ProductRepository products;
 
-    public Map<String, Object> migrateProductStatus() {
-        try {
-            List<QueryDocumentSnapshot> documents = firestore.collection("products").get().get().getDocuments();
-
-            int migratedCount = 0;
-            int skippedCount = 0;
-            WriteBatch batch = firestore.batch();
-
-            for (DocumentSnapshot doc : documents) {
-                if (doc.contains("updatedStatus") && doc.get("updatedStatus") != null) {
-                    skippedCount++;
-                    continue;
-                }
-
-                String oldStatusString = doc.getString("status");
-                if (oldStatusString == null || oldStatusString.isBlank()) {
-                    oldStatusString = "AVAILABLE";
-                }
-
-                Map<String, Object> newStatusObject = new HashMap<>();
-                newStatusObject.put("code", oldStatusString);
-                newStatusObject.put("updatedAt", new Date());
-                newStatusObject.put("comment", "updatedStatus");
-
-                DocumentReference ref = doc.getReference();
-
-                batch.update(ref, "updatedStatus", newStatusObject);
-                migratedCount++;
+    public MigrationResult migrateProductStatus() {
+        Query page = firestore.collection("products").select(FIELDS).orderBy(FieldPath.documentId()).limit(BATCH_SIZE);
+        int migrated = 0;
+        int skipped = 0;
+        for (List<QueryDocumentSnapshot> documents = await(page.get()).getDocuments();
+             !documents.isEmpty();
+             documents = await(page.startAfter(documents.getLast()).get()).getDocuments()) {
+            int updated = migratePage(documents);
+            migrated += updated;
+            skipped += documents.size() - updated;
+            if (documents.size() < BATCH_SIZE) {
+                break;
             }
-
-            if (migratedCount > 0) {
-                batch.commit().get();
-            }
-            invalidateCache();
-
-            log.info("Migration finished: migrated={}, skipped={}", migratedCount, skippedCount);
-
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("status", "SUCCESS");
-            response.put("migratedCount", migratedCount);
-            response.put("skippedCount", skippedCount);
-            return response;
-
-        } catch (Exception e) {
-            throw new RuntimeException("Migration failed: " + e.getMessage(), e);
         }
+        return new MigrationResult("SUCCESS", migrated, skipped);
     }
 
-    private void invalidateCache() {
-        try {
-            List<ProductCacheEntry> allCached = cacheRepository.findAll();
-            for (ProductCacheEntry entry : allCached) {
-                cacheRepository.delete(entry.getCacheKey());
+    private int migratePage(List<QueryDocumentSnapshot> documents) {
+        DocumentReference[] references = documents.stream()
+                .map(DocumentSnapshot::getReference).toArray(DocumentReference[]::new);
+        return await(firestore.runTransaction(transaction -> {
+            List<DocumentSnapshot> snapshots = await(transaction.getAll(references, FieldMask.of(FIELDS)));
+            Set<String> categories = new HashSet<>();
+            int updated = 0;
+            for (DocumentSnapshot snapshot : snapshots) {
+                Product product = snapshot.toObject(Product.class);
+                if (product == null) {
+                    continue;
+                }
+                Map<String, Object> changes = statusChanges(product);
+                if (!changes.isEmpty()) {
+                    transaction.update(snapshot.getReference(), changes);
+                    categories.add(product.getCategoryId());
+                    updated++;
+                }
             }
-            log.info("cache invalidated");
-        } catch (Exception e) {
-            log.warn("failed to invalidate cache", e);
+            if (updated > 0) {
+                products.advanceRevisions(transaction, categories.toArray(String[]::new));
+            }
+            return updated;
+        }));
+    }
+
+    static Map<String, Object> statusChanges(Product product) {
+        Map<String, Object> changes = new HashMap<>();
+        String code = product.getActualStatus().getCode();
+        if (!Objects.equals(code, product.getStatus())) {
+            changes.put("status", code);
         }
+        ProductStatus current = product.getUpdatedStatus();
+        if (current == null || !Product.hasStatusCode(current.getCode())) {
+            changes.put("updatedStatus", new ProductStatus(code, new Date(), "updatedStatus"));
+        }
+        return changes;
+    }
+
+    public record MigrationResult(String status, int migratedCount, int skippedCount) {
     }
 }

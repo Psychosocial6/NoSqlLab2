@@ -1,48 +1,25 @@
 package com.example.nosqllab2.analytics;
 
-import com.google.cloud.firestore.Firestore;
-import com.google.cloud.firestore.Query;
-import com.google.cloud.firestore.QueryDocumentSnapshot;
-import com.google.cloud.firestore.QuerySnapshot;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
+import java.util.TreeMap;
 
-@Slf4j
 @RequiredArgsConstructor
 @Service
 public class ProductAnalyticsService {
-    private final Firestore firestore;
+    private final ProductChangeRepository repository;
 
-    public List<ChangeIntervalStat> getChangeAnalytics(String fromInterval, String toInterval)
-            throws ExecutionException, InterruptedException {
-
-        Query query = firestore.collection("product_change_stats")
-                .orderBy("intervalKey", Query.Direction.ASCENDING);
-
-        if (fromInterval != null && !fromInterval.isBlank()) {
-            query = query.whereGreaterThanOrEqualTo("intervalKey", fromInterval);
+    public List<ChangeIntervalStat> getChangeAnalytics(String fromInterval, String toInterval) {
+        var byInterval = new TreeMap<String, ProductChangeRepository.IntervalShard>();
+        for (var shard : repository.read(ChangeIntervals.range(fromInterval, toInterval))) {
+            byInterval.merge(shard.interval(), shard, ProductChangeRepository.IntervalShard::combine);
         }
-        if (toInterval != null && !toInterval.isBlank()) {
-            query = query.whereLessThanOrEqualTo("intervalKey", toInterval);
-        }
-
-        QuerySnapshot snapshot = query.get().get();
-
-        List<ChangeIntervalStat> result = new ArrayList<>();
-        for (QueryDocumentSnapshot doc : snapshot.getDocuments()) {
-            result.add(new ChangeIntervalStat(
-                    doc.getString("intervalKey"),
-                    doc.getLong("changeCount"),
-                    doc.getDate("lastUpdated") != null ? doc.getDate("lastUpdated").toString() : ""
-            ));
-        }
-
-        log.info("Returned {} analytical interval stats", result.size());
-        return result;
+        return byInterval.values().stream()
+                .map(stat -> new ChangeIntervalStat(stat.interval(), stat.count(),
+                        stat.lastUpdated().equals(Instant.EPOCH) ? "" : stat.lastUpdated().toString()))
+                .toList();
     }
 }

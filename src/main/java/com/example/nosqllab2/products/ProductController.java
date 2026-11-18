@@ -1,19 +1,13 @@
 package com.example.nosqllab2.products;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Validated
 @RequiredArgsConstructor
 @RequestMapping("/api/product")
 @RestController
@@ -29,38 +23,31 @@ public class ProductController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "name") String sortBy,
-            @RequestParam(defaultValue = "asc") String direction
-    ) {
-        Sort sort = "desc".equalsIgnoreCase(direction) ? Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
-        Pageable pageable = PageRequest.of(page, size, sort);
-
-        List<ProductResponse> products = productService.getProducts(categoryId, specField, specVal, status, pageable);
-        return ResponseEntity.ok(products);
+            @RequestParam(defaultValue = "asc") String direction,
+            @RequestParam(required = false) String after) {
+        ProductQuery query = ProductQuery.of(categoryId, specField, specVal, status, page, size, sortBy, direction, after);
+        return productService.getProducts(query).response();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ProductResponse> getProductById(@PathVariable @NotNull(message = "id required") String id) {
-        ProductResponse productResponse = productService.getProductById(id);
-        return ResponseEntity.ok(productResponse);
+    public ProductResponse getProductById(@PathVariable String id) {
+        return productService.getProductById(id);
     }
 
     @PostMapping
-    public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody ProductRequest productRequest) {
-        ProductResponse productResponse = productService.createProduct(productRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(productResponse);
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProductResponse createProduct(@Valid @RequestBody ProductRequest request) {
+        return productService.createProduct(request);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteProductById(@PathVariable @NotNull(message = "id required") String id) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteProductById(@PathVariable String id) {
         productService.deleteProductById(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ProductResponse> updateProduct(
-            @PathVariable @NotNull(message = "id required") String id,
-            @Valid @RequestBody ProductRequest productRequest) {
-        ProductResponse updated = productService.updateProduct(id, productRequest);
-        return ResponseEntity.ok(updated);
+    public ProductResponse updateProduct(@PathVariable String id, @Valid @RequestBody ProductRequest request) {
+        return productService.updateProduct(id, request);
     }
 }

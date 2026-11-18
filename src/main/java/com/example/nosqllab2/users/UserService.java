@@ -1,53 +1,41 @@
 package com.example.nosqllab2.users;
 
-import com.example.nosqllab2.exceptions.UserAlreadyExistsException;
 import com.example.nosqllab2.exceptions.UserNotFoundException;
+import com.example.nosqllab2.storage.DocumentPage;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.session.SessionInformation;
+import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @RequiredArgsConstructor
 @Service
 public class UserService {
-
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SessionRegistry sessions;
 
-    public void deleteUserById(String id) {
-        userRepository.deleteById(id).block();
-    }
-
-    public UserResponse createUser(UserRequest userRequest) {
-        Boolean exists = userRepository.existsByNameIgnoreCase(userRequest.name()).block();
-        if (Boolean.TRUE.equals(exists)) {
-            throw new UserAlreadyExistsException("User already exists");
-        }
-        User user = new User(
-                userRequest.name(),
-                userRequest.email(),
-                passwordEncoder.encode(userRequest.password()),
-                "ПРЕПОДАВАТЕЛЬ"
-        );
-        User saved = userRepository.save(user).block();
-        return UserResponse.fromEntity(saved);
+    public UserResponse createUser(UserRequest request) {
+        User user = new User(request.name().strip(), request.email().strip(),
+                passwordEncoder.encode(request.password()), UserRoles.TEACHER);
+        return UserResponse.fromEntity(userRepository.create(user));
     }
 
     public UserResponse getUserById(String id) {
-        User user = userRepository.findById(id).block();
-        if (user == null) {
-            throw new UserNotFoundException("User not found");
-        }
-        return UserResponse.fromEntity(user);
+        return userRepository.findById(id)
+                .map(UserResponse::fromEntity)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
     }
 
-    public List<UserResponse> getUsers() {
-        return userRepository.findAll()
-                .collectList()
-                .block()
-                .stream()
-                .map(UserResponse::fromEntity)
-                .toList();
+    public DocumentPage<UserResponse> getUsers(int size, String cursor) {
+        return userRepository.list(size, DocumentPage.decodeCursor(cursor));
+    }
+
+    public void deleteUserById(String id) {
+        userRepository.delete(id);
+        sessions.getAllPrincipals().stream()
+                .filter(principal -> principal instanceof UserPrincipal user && id.equals(user.id()))
+                .flatMap(principal -> sessions.getAllSessions(principal, false).stream())
+                .forEach(SessionInformation::expireNow);
     }
 }

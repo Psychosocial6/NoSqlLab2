@@ -1,72 +1,53 @@
 package com.example.nosqllab2.operations;
 
-import com.example.nosqllab2.models.OperationCache;
-import com.example.nosqllab2.models.OperationLogDTO;
-import com.example.nosqllab2.repository.OperationCacheRepository;
+import com.example.nosqllab2.exceptions.ApplicationException;
+import com.example.nosqllab2.storage.DocumentPage;
+import com.example.nosqllab2.storage.StorageKey;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
-import java.util.Date;
-import java.util.*;
-
-@Slf4j
 @RequiredArgsConstructor
 @Service
 public class OperationService {
+    static final int DEFAULT_PAGE_SIZE = 100;
+    private final OperationLogRepository logs;
+    private final OperationCacheRepository cache;
 
-    private final OperationLogRepository logRepository;
-    private final OperationCacheRepository cacheRepository;
-
-    public void logOperation(String userId, String operation) {
-        OperationLog entity = new OperationLog(userId, operation, new Date());
-        logRepository.save(entity).block();
-        cacheRepository.delete(String.valueOf(userId));
-        log.info("cache invalidated for user {}", userId);
+    public DocumentPage<OperationLogDTO> getUserOperations(String userId, int size, String cursor) {
+        String after = DocumentPage.decodeCursor(cursor);
+        long revision = logs.revision(userId);
+        String key = cacheKey(userId, size, after);
+        return cache.findCurrent(key, revision).map(OperationCache::page).orElseGet(() -> {
+            DocumentPage<OperationLogDTO> page = logs.list(userId, size, after);
+            cache.saveBestEffort(new OperationCache(key, revision, cache.expiryTime(), page));
+            return page;
+        });
     }
 
-    public List<OperationLogDTO> getUserOperations(String userId) {
-        String cacheKey = String.valueOf(userId);
-        long startRiak = System.nanoTime();
-        Optional<OperationCache> cache = cacheRepository.findById(cacheKey);
-        long riakDurationNs = System.nanoTime() - startRiak;
-        if (cache.isPresent()) {
-            log.info("cache hit: {} ms ({} ns)", riakDurationNs / 1_000_000.0, riakDurationNs);
-            return cache.get().operations();
-        }
-        long startPostgres = System.nanoTime();
-        List<OperationLogDTO> userOps = logRepository.findByUserIdOrderByOperationTimeDesc(userId)
-                .map(OperationLogDTO::fromEntity)
-                .collectList()
-                .block();
-        long pgDurationNs = System.nanoTime() - startPostgres;
-        log.info("cache miss: {} ms ({} ns)", pgDurationNs / 1_000_000.0, pgDurationNs);
-        cacheRepository.save(new OperationCache(cacheKey, userOps));
-        return userOps;
+    public Benchmark speedtest(String userId, int iterations) {
+        getUserOperations(userId, DEFAULT_PAGE_SIZE, null);
+        String key = cacheKey(userId, DEFAULT_PAGE_SIZE, null);
+        long revision = logs.revision(userId);
+        double firestore = averageMillis(iterations, () -> logs.list(userId, DEFAULT_PAGE_SIZE, null));
+        double riak = averageMillis(iterations, () -> cache.findCurrent(key, revision)
+                .orElseThrow(() -> new ApplicationException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Riak has no current cached page for the benchmark")));
+        return new Benchmark(iterations, firestore, riak, firestore / riak);
     }
 
-    public Map<String, Object> speedtest(String userId, int iterations) {
-        String cacheKey = String.valueOf(userId);
-        getUserOperations(userId);
-        long startPg = System.nanoTime();
-        for (int i = 0; i < iterations; i++) {
-            logRepository.findByUserIdOrderByOperationTimeDesc(userId).collectList().block();
+    private static double averageMillis(int iterations, Runnable read) {
+        long start = System.nanoTime();
+        for (int readNumber = 0; readNumber < iterations; readNumber++) {
+            read.run();
         }
-        long totalPgNs = System.nanoTime() - startPg;
-        double avgPgMs = (totalPgNs / 1_000_000.0) / iterations;
-        long startRiak = System.nanoTime();
-        for (int i = 0; i < iterations; i++) {
-            cacheRepository.findById(cacheKey);
-        }
-        long totalRiakNs = System.nanoTime() - startRiak;
-        double avgRiakMs = (totalRiakNs / 1_000_000.0) / iterations;
-        double speedup = avgPgMs / avgRiakMs;
-        Map<String, Object> report = new LinkedHashMap<>();
-        report.put("iterations", iterations);
-        report.put("postgreSQL_avg", String.format("%.3f ms", avgPgMs));
-        report.put("Riak_avg", String.format("%.3f ms", avgRiakMs));
-        report.put("postgreSQL_avg / Riak_avg", String.format("%.2fx", speedup));
-        log.info("Speedtest results: {}", report);
-        return report;
+        return (System.nanoTime() - start) / (1_000_000.0 * iterations);
+    }
+
+    private static String cacheKey(String userId, int size, String after) {
+        return StorageKey.hash(StorageKey.hash(userId) + ":" + size + ":" + (after == null ? "" : after));
+    }
+
+    public record Benchmark(int iterations, double firestoreAvgMs, double riakAvgMs, double speedup) {
     }
 }

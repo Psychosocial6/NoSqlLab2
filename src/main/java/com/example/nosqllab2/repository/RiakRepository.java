@@ -1,105 +1,59 @@
 package com.example.nosqllab2.repository;
 
 import com.basho.riak.client.api.RiakClient;
+import com.basho.riak.client.api.cap.UnresolvedConflictException;
 import com.basho.riak.client.api.commands.kv.DeleteValue;
 import com.basho.riak.client.api.commands.kv.FetchValue;
 import com.basho.riak.client.api.commands.kv.StoreValue;
-import com.basho.riak.client.api.commands.kv.ListKeys;
+import com.basho.riak.client.api.convert.ConversionException;
 import com.basho.riak.client.core.query.Location;
 import com.basho.riak.client.core.query.Namespace;
+import org.springframework.dao.DataAccessResourceFailureException;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.time.Duration;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
 
 public abstract class RiakRepository<T> {
+    private final RiakClient client;
+    private final Namespace namespace;
+    private final Class<T> entityClass;
+    private final Duration timeout;
 
-    protected final RiakClient client;
-    protected final Namespace namespace;
-    protected final Class<T> entityClass;
-
-    public RiakRepository(RiakClient client, String bucketName, Class<T> entityClass) {
+    protected RiakRepository(RiakClient client, Namespace namespace, Class<T> entityClass, Duration timeout) {
         this.client = client;
-        this.namespace = new Namespace(bucketName);
+        this.namespace = namespace;
         this.entityClass = entityClass;
-    }
-
-    public RiakRepository(RiakClient client, String bucketType, String bucketName, Class<T> entityClass) {
-        this.client = client;
-        this.namespace = new Namespace(bucketType, bucketName);
-        this.entityClass = entityClass;
+        this.timeout = timeout;
     }
 
     protected abstract String extractId(T entity);
 
     public void save(T entity) {
         try {
-            String key = extractId(entity);
-            Location location = new Location(namespace, key);
-
-            StoreValue store = new StoreValue.Builder(entity)
-                    .withLocation(location)
-                    .build();
-
-            client.execute(store);
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Ошибка при сохранении в Riak", e);
+            StoreValue command = new StoreValue.Builder(entity).withLocation(location(extractId(entity))).build();
+            RiakCalls.execute(client, command, timeout);
+        } catch (ConversionException exception) {
+            throw new DataAccessResourceFailureException("Could not encode Riak value", exception);
         }
     }
 
     public Optional<T> findById(String id) {
+        FetchValue.Response response = RiakCalls.execute(client, new FetchValue.Builder(location(id)).build(), timeout);
+        if (response.isNotFound()) {
+            return Optional.empty();
+        }
         try {
-            Location location = new Location(namespace, id);
-
-            FetchValue fetch = new FetchValue.Builder(location).build();
-            FetchValue.Response response = client.execute(fetch);
-
-            if (response.isNotFound()) {
-                return Optional.empty();
-            }
-
-            T entity = response.getValue(entityClass);
-            return Optional.ofNullable(entity);
-
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Ошибка при чтении из Riak", e);
+            return Optional.ofNullable(response.getValue(entityClass));
+        } catch (ConversionException | UnresolvedConflictException exception) {
+            throw new DataAccessResourceFailureException("Could not read a unique Riak value", exception);
         }
     }
 
     public void delete(String id) {
-        try {
-            Location location = new Location(namespace, id);
-            DeleteValue delete = new DeleteValue.Builder(location).build();
-            client.execute(delete);
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Ошибка при удалении из Riak", e);
-        }
+        RiakCalls.execute(client, new DeleteValue.Builder(location(id)).build(), timeout);
     }
 
-    public List<T> findAll() {
-        List<T> result = new ArrayList<>();
-        try {
-            ListKeys listKeys = new ListKeys.Builder(namespace).build();
-            ListKeys.Response response = client.execute(listKeys);
-
-            for (Location location : response) {
-                FetchValue fetch = new FetchValue.Builder(location).build();
-                FetchValue.Response fetchResponse = client.execute(fetch);
-                if (!fetchResponse.isNotFound()) {
-                    T entity = fetchResponse.getValue(entityClass);
-                    if (entity != null) {
-                        result.add(entity);
-                    }
-                }
-            }
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Ошибка при получении списка ключей из Riak", e);
-        }
-        return result;
+    private Location location(String id) {
+        return new Location(namespace, id);
     }
 }

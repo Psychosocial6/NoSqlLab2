@@ -1,55 +1,54 @@
 package com.example.nosqllab2.users;
-import com.example.nosqllab2.exceptions.UserNotFoundException;
+
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
 @RestController
 public class AuthController {
-
     private final AuthenticationManager authenticationManager;
-    private final UserRepository userRepository;
+    private final SecurityContextRepository contexts;
+    private final SessionAuthenticationStrategy sessions;
 
-    public record LoginRequest(String username, String password) {}
+    public record LoginRequest(@NotBlank String username, @NotEmpty String password) {
+    }
 
     @PostMapping("/login")
-    public ResponseEntity<UserResponse> login(@RequestBody LoginRequest loginRequest, HttpServletRequest request) {
+    public UserResponse login(@Valid @RequestBody LoginRequest login,
+                              HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginRequest.username(), loginRequest.password())
-        );
+                UsernamePasswordAuthenticationToken.unauthenticated(login.username(), login.password()));
+        sessions.onAuthentication(authentication, request, response);
 
-        SecurityContext securityContext = SecurityContextHolder.getContext();
-        securityContext.setAuthentication(authentication);
-        HttpSession session = request.getSession(true);
-        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
-
-        User user = userRepository.findByNameIgnoreCase(loginRequest.username()).block();
-        if (user == null) {
-            throw new UserNotFoundException("User not found");
-        }
-
-        return ResponseEntity.ok(UserResponse.fromEntity(user));
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+        contexts.saveContext(context, request, response);
+        return ((UserPrincipal) authentication.getPrincipal()).response();
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> getCurrentUser(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(401).build();
-        }
-        User user = userRepository.findByNameIgnoreCase(authentication.getName()).block();
-        if (user == null) {
-            throw new UserNotFoundException("User not found");
-        }
-        return ResponseEntity.ok(UserResponse.fromEntity(user));
+    public UserResponse currentUser(@AuthenticationPrincipal UserPrincipal principal) {
+        return principal.response();
+    }
+
+    @GetMapping("/csrf")
+    public CsrfToken csrf(CsrfToken token) {
+        return token;
     }
 }

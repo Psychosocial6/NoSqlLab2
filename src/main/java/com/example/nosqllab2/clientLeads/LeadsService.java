@@ -1,26 +1,25 @@
 package com.example.nosqllab2.clientLeads;
 
 import com.example.nosqllab2.riakservices.RiakCounterService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.stereotype.Service;
 
-import java.util.concurrent.ExecutionException;
-
+@Slf4j
+@RequiredArgsConstructor
 @Service
 public class LeadsService {
+    private final LeadRepository leads;
+    private final RiakCounterService counter;
 
-    private final RiakCounterService riakCounterService;
-
-    public LeadsService(RiakCounterService riakCounterService) {
-        this.riakCounterService = riakCounterService;
-    }
-
-    public long createLead(){
+    public long createLead(String userId) {
+        long id = leads.create(userId);
         try {
-            return riakCounterService.generateNextId(LeadsService.class);
-        } catch (ExecutionException |InterruptedException e) {
-            e.printStackTrace();
-            throw new RuntimeException("Ошибка при создании заявки: " + e.getCause().getMessage(), e);
+            counter.recordLeadCreated();
+        } catch (DataAccessResourceFailureException exception) {
+            log.warn("Lead {} was saved but its Riak counter could not be updated", id, exception);
         }
+        return id;
     }
-
 }

@@ -8,37 +8,31 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.net.UnknownHostException;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 @Configuration
 public class RiakConfig {
-
-    @Value("${riak.host:127.0.0.1}")
-    private String host;
-
-    @Value("${riak.port:8087}")
-    private int port1;
-
-    @Value("${riak.port:8089}")
-    private int port2;
-
-    @Bean
-    public RiakClient riakClient() throws UnknownHostException {
-        RiakNode node1 = new RiakNode.Builder()
-                .withRemoteAddress(host)
-                .withRemotePort(port1)
-                .build();
-
-        RiakNode node2 = new RiakNode.Builder()
-                .withRemoteAddress(host)
-                .withRemotePort(port2)
-                .build();
-
-
-        RiakCluster cluster = new RiakCluster.Builder(Arrays.asList(node1, node2)).build();
-
+    @Bean(destroyMethod = "shutdown")
+    RiakClient riakClient(@Value("${riak.host:127.0.0.1}") String host,
+                          @Value("${riak.port:8087}") int port,
+                          @Value("${riak.secondary-host:${riak.host:127.0.0.1}}") String secondaryHost,
+                          @Value("${riak.secondary-port:8089}") int secondaryPort) throws UnknownHostException {
+        List<RiakNode> nodes = new ArrayList<>();
+        nodes.add(node(host, port));
+        if (secondaryPort > 0 && (!host.equals(secondaryHost) || port != secondaryPort)) {
+            nodes.add(node(secondaryHost, secondaryPort));
+        }
+        RiakCluster cluster = new RiakCluster.Builder(nodes).build();
         cluster.start();
         return new RiakClient(cluster);
     }
 
+    private static RiakNode node(String host, int port) throws UnknownHostException {
+        return new RiakNode.Builder()
+                .withRemoteAddress(host)
+                .withRemotePort(port)
+                .withConnectionTimeout(1000)
+                .build();
+    }
 }

@@ -1,5 +1,6 @@
 package com.example.nosqllab2.resetToken;
 
+import com.example.nosqllab2.exceptions.UserNotFoundException;
 import com.example.nosqllab2.models.ResetTokenData;
 import com.example.nosqllab2.repository.ResetTokenDataRepository;
 import com.example.nosqllab2.users.UserRepository;
@@ -21,8 +22,8 @@ public class ResetTokenService {
     private static final String BASE_URL = "http://localhost:8080/api/resetData/reset";
 
     public String createResetToken(String username){
-        if(Boolean.FALSE.equals(userRepository.existsByNameIgnoreCase(username).block())){
-            throw new RuntimeException("User not found");
+        if (userRepository.findByUsername(username).isEmpty()) {
+            throw new UserNotFoundException("User not found");
         }
 
         String token = UUID.randomUUID().toString();

@@ -1,0 +1,16 @@
+services:
+  riak:
+    image: ${RIAK_IMAGE:-kefirgames/riak:2.2.3-basho}
+    hostname: riak
+    ports:
+      - "127.0.0.1:8087:8087"
+    volumes:
+      - riak-data:/var/lib/riak
+    healthcheck:
+      test: ["CMD-SHELL", "riak-admin status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  riak-data:

@@ -1,29 +1,35 @@
 package com.example.nosqllab2.users;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.CredentialsExpiredException;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsPasswordService;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 @RequiredArgsConstructor
 @Service
-public class CustomUserDetailsService implements UserDetailsService {
-
+public class CustomUserDetailsService implements UserDetailsService, UserDetailsPasswordService {
     private final UserRepository userRepository;
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByNameIgnoreCase(username).block();
-        if (user == null) {
-            throw new UsernameNotFoundException("User not found");
+    public UserDetails loadUserByUsername(String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        String credential = PasswordHashes.credential(user);
+        if (credential == null) {
+            throw new UsernameNotFoundException("User has no credential");
         }
+        return new UserPrincipal(user, credential);
+    }
 
-
-        return org.springframework.security.core.userdetails.User.builder()
-                .username(user.getName())
-                .password(user.getPassword())
-                .roles(user.getRole())
-                .build();
+    @Override
+    public UserDetails updatePassword(UserDetails user, String password) {
+        UserPrincipal principal = (UserPrincipal) user;
+        if (!userRepository.upgradePassword(principal.id(), user.getPassword(), password)) {
+            throw new CredentialsExpiredException("Credential changed during sign-in");
+        }
+        return principal;
     }
 }

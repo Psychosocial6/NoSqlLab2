@@ -1,8 +1,8 @@
 package com.example.nosqllab2.users;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,26 +19,26 @@ public class UserController {
     private final UserService userService;
 
     @GetMapping
-    public ResponseEntity<List<UserResponse>> getUsers() {
-        List<UserResponse> users = userService.getUsers();
-        return ResponseEntity.ok(users);
+    public ResponseEntity<List<UserResponse>> getUsers(
+            @RequestParam(defaultValue = "100") @Min(1) @Max(200) int size,
+            @RequestParam(required = false) String after) {
+        return userService.getUsers(size, after).response();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable @NotNull(message = "id required") String id) {
-        UserResponse userResponse = userService.getUserById(id);
-        return ResponseEntity.ok(userResponse);
+    public UserResponse getUserById(@PathVariable String id) {
+        return userService.getUserById(id);
     }
 
     @PostMapping
-    public ResponseEntity<UserResponse> createUser(@Valid @RequestBody UserRequest userRequest) {
-        UserResponse userResponse = userService.createUser(userRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(userResponse);
+    @ResponseStatus(HttpStatus.CREATED)
+    public UserResponse createUser(@Valid @RequestBody UserRequest request) {
+        return userService.createUser(request);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUserById(@PathVariable @NotNull(message = "id required") String id) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteUserById(@PathVariable String id) {
         userService.deleteUserById(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 }
