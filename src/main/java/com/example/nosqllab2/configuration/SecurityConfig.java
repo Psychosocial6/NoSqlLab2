@@ -50,7 +50,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico",
-                                "/api/auth/csrf", "/api/product", "/api/product/**").permitAll()
+                                "/api/auth/csrf", "/api/product", "/api/product/**", "/api/experiment/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/user",
                                 "/api/resetData/createToken", "/api/resetData/reset").permitAll()
                         .requestMatchers("/api/product", "/api/product/**", "/api/user", "/api/user/**",
