@@ -402,9 +402,20 @@
 <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
     const API_BASE = '/api';
+    const NOTICE_DURATION_MS = 4000;
+
+    function useTransientNotice() {
+        const [notice, setNotice] = useState(null);
+        useEffect(() => {
+            if (!notice) return;
+            const timer = setTimeout(() => setNotice(null), NOTICE_DURATION_MS);
+            return () => clearTimeout(timer);
+        }, [notice]);
+        return [notice, setNotice];
+    }
 
     function useNotificationSocket(userId) {
-        const [latest, setLatest] = useState(null);
+        const [latest, setLatest] = useTransientNotice();
         const [connection, setConnection] = useState('connecting');
         const [revision, setRevision] = useState(0);
 
@@ -441,9 +452,11 @@
 
             const connect = () => {
                 if (stopped) return;
+                console.info('[WebSocket] Подключаем уведомления');
                 socket = new WebSocket(url);
                 socket.onopen = () => {
                     if (stopped) return;
+                    console.info('[WebSocket] Подключён');
                     setConnection('connected');
                     setRevision(value => value + 1);
                     reconnectDelay = 1000;
@@ -479,6 +492,7 @@
                     }
                 };
                 socket.onclose = ({ code }) => {
+                    console.info('[WebSocket] Отключён, код закрытия:', code);
                     if (stopped) return;
                     if (code === 1008) {
                         pending.clear();
@@ -769,7 +783,7 @@
         const [activeTab, setActiveTab] = useState('catalog');
         const notificationSocket = useNotificationSocket(currentUser?.id);
         const [notificationRefresh, setNotificationRefresh] = useState(0);
-        const [leadFeedback, setLeadFeedback] = useState(null);
+        const [leadFeedback, setLeadFeedback] = useTransientNotice();
         const [products, setProducts] = useState([]);
         const [favorites, setFavorites] = useState([]);
         const [operations, setOperations] = useState([]);
@@ -919,8 +933,11 @@
                     body: JSON.stringify({ username: form.name.trim(), password: form.password })
                 });
 
-                if (!res.ok) {
+                if (res.status === 401) {
                     throw new Error('Неверное имя пользователя или пароль');
+                }
+                if (!res.ok) {
+                    throw new Error('Не удалось войти. Попробуйте ещё раз.');
                 }
 
                 const user = await res.json();
@@ -949,8 +966,11 @@
                 });
 
                 if (!regRes.ok) {
-                    const err = await regRes.json();
-                    throw new Error(err.message || 'Ошибка создания пользователя');
+                    const err = await regRes.json().catch(() => null);
+                    if (regRes.status === 409 && err?.message === 'User already exists') {
+                        throw new Error('Пользователь с таким именем уже существует. Войдите или выберите другое имя.');
+                    }
+                    throw new Error(err?.message || 'Не удалось создать пользователя.');
                 }
 
                 const loginRes = await fetch(`${API_BASE}/auth/login`, {
@@ -958,6 +978,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username: form.name.trim(), password: form.password })
                 });
+                if (!loginRes.ok) {
+                    throw new Error('Аккаунт создан, но автоматический вход не удался. Войдите вручную.');
+                }
 
                 const user = await loginRes.json();
                 handleAuthSuccess(user);
@@ -1289,14 +1312,13 @@
                     )}
                     {notificationSocket.latest && (
                         <aside className="notification-notice" aria-label="Новое уведомление">
-                            <span role="status">{notificationSocket.latest}</span>
+                            <span role="status"><strong>Уведомление из WebSocket</strong><br />{notificationSocket.latest}</span>
                             {activeTab !== 'notifications' && (
                                 <button className="nav-btn" onClick={() => {
                                     notificationSocket.dismiss();
                                     setActiveTab('notifications');
                                 }}>Открыть историю</button>
                             )}
-                            <button className="nav-btn" onClick={notificationSocket.dismiss}>Закрыть</button>
                         </aside>
                     )}
                     {activeTab === 'notifications' && (
