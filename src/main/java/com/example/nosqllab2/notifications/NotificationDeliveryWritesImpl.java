@@ -3,10 +3,6 @@ package com.example.nosqllab2.notifications;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.cassandra.core.CassandraTemplate;
 
-interface NotificationDeliveryWrites {
-    void saveDelivery(UserNotificationEvent event);
-}
-
 @RequiredArgsConstructor
 class NotificationDeliveryWritesImpl implements NotificationDeliveryWrites {
     private final CassandraTemplate cassandra;

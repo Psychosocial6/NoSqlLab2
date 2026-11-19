@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Магазин</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -356,6 +357,42 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             max-width: 600px;
         }
+        .notification-nav { margin-bottom: 14px; }
+        .notification-filters { grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); }
+        .notification-filters input, .notification-filters select { min-width: 0; }
+        .notification-filters .notification-id { grid-column: 1 / -1; }
+        .notification-notice, .lead-feedback {
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            border-radius: 6px;
+            background: #e8f3ff;
+            border-left: 4px solid #007bff;
+            color: #153a63;
+        }
+        .notification-notice, .notification-item {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 10px 16px;
+        }
+        .notification-notice > span, .notification-item > div { flex: 1 1 230px; min-width: 0; }
+        .notification-item { overflow-wrap: anywhere; }
+        .notification-item p { margin: 6px 0; }
+        .notification-item .op-id { color: #5c6470; }
+        .notification-time { color: #4a5665; font-size: 13px; }
+        .notification-status {
+            display: inline-block;
+            border-radius: 4px;
+            padding: 3px 7px;
+            background: #e8f3ff;
+            color: #153a63;
+            font-size: 13px;
+        }
+        .notification-status.DELIVERED { background: #e1f5e8; color: #195c34; }
+        .notification-status.UNCONFIRMED { background: #fff3d6; color: #704900; }
+        .notification-status.FAILED { background: #ffeae8; color: #9a2621; }
+        .notification-more { margin-top: 14px; }
+        .notification-notice button, .notification-item button { margin: 0; }
     </style>
 </head>
 <body>
@@ -363,8 +400,365 @@
 <div id="root"></div>
 
 <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef, useCallback } = React;
     const API_BASE = '/api';
+
+    function useNotificationSocket(userId) {
+        const [latest, setLatest] = useState(null);
+        const [connection, setConnection] = useState('connecting');
+        const [revision, setRevision] = useState(0);
+
+        useEffect(() => {
+            setLatest(null);
+            setConnection('connecting');
+            if (!userId) return;
+
+            const seen = new Set();
+            const pending = new Map();
+            const url = new URL('/ws/notifications', window.location.href);
+            url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+            let socket;
+            let reconnectTimer;
+            let reconnectDelay = 1000;
+            let stopped = false;
+
+            const sendPending = () => {
+                const now = Date.now();
+                for (const [attemptId, ack] of pending) {
+                    if (ack.expiresAt <= now) {
+                        pending.delete(attemptId);
+                    } else if (socket?.readyState === WebSocket.OPEN && ack.retryAt <= now) {
+                        try {
+                            socket.send(JSON.stringify({ type: 'ACK', attemptId }));
+                            ack.retryAt = now + 4000;
+                        } catch {
+                            socket.close();
+                            return;
+                        }
+                    }
+                }
+            };
+
+            const connect = () => {
+                if (stopped) return;
+                socket = new WebSocket(url);
+                socket.onopen = () => {
+                    if (stopped) return;
+                    setConnection('connected');
+                    setRevision(value => value + 1);
+                    reconnectDelay = 1000;
+                    for (const ack of pending.values()) ack.retryAt = 0;
+                    sendPending();
+                };
+                socket.onmessage = ({ data }) => {
+                    if (stopped) return;
+                    let frame;
+                    try {
+                        frame = JSON.parse(data);
+                    } catch {
+                        return;
+                    }
+                    if (frame?.type === 'NOTIFICATION' && typeof frame.notificationId === 'string'
+                        && typeof frame.attemptId === 'string' && typeof frame.message === 'string') {
+                        if (!seen.has(frame.notificationId)) {
+                            if (seen.size >= 200) seen.delete(seen.values().next().value);
+                            seen.add(frame.notificationId);
+                            setLatest({ userId, message: frame.message });
+                            setRevision(value => value + 1);
+                        }
+                        if (!pending.has(frame.attemptId)) {
+                            pending.set(frame.attemptId, { retryAt: 0, expiresAt: Date.now() + 10 * 60 * 1000 });
+                        }
+                        sendPending();
+                    } else if (frame?.type === 'ACKNOWLEDGED' || frame?.type === 'INVALID_ACK') {
+                        const attempted = pending.delete(frame.attemptId);
+                        if (attempted && frame.type === 'ACKNOWLEDGED') setRevision(value => value + 1);
+                    } else if (frame?.type === 'ACK_RETRY') {
+                        const ack = pending.get(frame.attemptId);
+                        if (ack) ack.retryAt = Date.now() + 2000;
+                    }
+                };
+                socket.onclose = ({ code }) => {
+                    if (stopped) return;
+                    if (code === 1008) {
+                        pending.clear();
+                        setConnection('unavailable');
+                        return;
+                    }
+                    setConnection('reconnecting');
+                    reconnectTimer = setTimeout(connect, reconnectDelay);
+                    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+                };
+            };
+
+            connect();
+            const retryTimer = setInterval(sendPending, 1000);
+            return () => {
+                stopped = true;
+                clearTimeout(reconnectTimer);
+                clearInterval(retryTimer);
+                socket?.close();
+            };
+        }, [userId]);
+
+        return {
+            latest: latest && latest.userId === userId ? latest.message : null,
+            dismiss: () => setLatest(null),
+            connection,
+            revision
+        };
+    }
+
+    function useNotificationPage() {
+        const [page, setPage] = useState({ query: null, events: [], nextCursor: null, busy: false, error: '' });
+        const request = useRef(null);
+        useEffect(() => () => request.current?.abort(), []);
+
+        const load = useCallback(async (query, cursor = null) => {
+            request.current?.abort();
+            const controller = new AbortController();
+            request.current = controller;
+            setPage(previous => ({
+                query,
+                events: cursor ? previous.events : [],
+                nextCursor: cursor,
+                busy: true,
+                error: ''
+            }));
+
+            const params = new URLSearchParams(query.params);
+            if (cursor) params.set('cursor', cursor);
+            try {
+                const response = await fetch(query.path + '?' + params, {
+                    signal: controller.signal, cache: 'no-store'
+                });
+                if (!response.ok) {
+                    const errors = {
+                        400: cursor ? 'Страница устарела. Повторите поиск.' : 'Проверьте параметры поиска.',
+                        401: 'Сессия завершилась. Войдите снова.',
+                        403: 'У вас нет доступа к этому запросу.',
+                        404: 'За выбранный месяц попытки доставки не найдены.',
+                        503: 'Хранилище временно недоступно. Попробуйте ещё раз.'
+                    };
+                    throw new Error(errors[response.status] || 'Не удалось загрузить события.');
+                }
+                const data = await response.json();
+                if (controller.signal.aborted) return;
+                setPage(previous => {
+                    const events = cursor ? new Map(previous.events.map(row => [row.eventId, row])) : new Map();
+                    for (const row of data.events) events.set(row.eventId, row);
+                    return {
+                        query, events: [...events.values()], nextCursor: data.nextCursor,
+                        busy: false, error: ''
+                    };
+                });
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    setPage(previous => ({ ...previous, busy: false, error: error.message }));
+                }
+            }
+        }, []);
+
+        const loadMore = () => load(page.query, page.nextCursor);
+        return { ...page, load, loadMore };
+    }
+
+    const deliveryLabels = {
+        CREATED: 'Уведомление создано',
+        DELIVERED: 'Получено',
+        UNCONFIRMED: 'Ожидает подтверждения',
+        FAILED: 'Ошибка доставки'
+    };
+    const deliveryErrors = {
+        NO_ACTIVE_SESSION: 'Нет открытого WebSocket-соединения',
+        SEND_ERROR: 'Не удалось отправить сообщение по WebSocket',
+        ACK_TIMEOUT: 'Подтверждение не пришло вовремя'
+    };
+
+    function utcDayEnd(date) {
+        const end = new Date(date + 'T00:00:00Z');
+        end.setUTCDate(end.getUTCDate() + 1);
+        return end.toISOString();
+    }
+
+    function NotificationPageSize({ value, onChange }) {
+        return (
+            <label className="filter-group">Событий на странице
+                <select value={value} onChange={event => onChange(event.target.value)}>
+                    {[1, 5, 10, 20, 50, 100].map(size => <option key={size}>{size}</option>)}
+                </select>
+            </label>
+        );
+    }
+
+    function NotificationResults({ page, onAttempts, showRecipient = false }) {
+        return (
+            <>
+                {page.error && <div className="error-msg" role="alert">{page.error}</div>}
+                {page.busy && <p role="status">Загружаем события…</p>}
+                {page.query && !page.busy && !page.error && page.events.length === 0 && (
+                    <p>{page.nextCursor ? 'На этой странице нет событий.' : 'События не найдены.'}</p>
+                )}
+                <div className="op-list">
+                    {page.events.map(row => {
+                        const status = row.deliveryStatus || row.eventType;
+                        const time = new Date(row.eventTime);
+                        return (
+                            <article className="op-card notification-item" key={row.eventId}>
+                                <div>
+                                    <span className={'notification-status ' + status}>{deliveryLabels[status] || status}</span>
+                                    {row.message && <p>{row.message}</p>}
+                                    {row.errorMessage && <p>{deliveryErrors[row.errorMessage] || row.errorMessage}</p>}
+                                    <p className="op-id">Уведомление: {row.notificationId}</p>
+                                    {showRecipient && <p className="op-id">Получатель: {row.userId}</p>}
+                                    <p className="notification-time">{row.channel} · {time.toLocaleString('ru-RU', { timeZone: 'UTC' })} UTC</p>
+                                </div>
+                                {onAttempts && <button className="nav-btn" onClick={() => onAttempts(row)}>Попытки доставки</button>}
+                            </article>
+                        );
+                    })}
+                </div>
+                {page.nextCursor && (
+                    <button className="nav-btn notification-more" disabled={page.busy} onClick={page.loadMore}>Загрузить ещё</button>
+                )}
+            </>
+        );
+    }
+
+    function NotificationsPanel({ connection, revision, isAdmin }) {
+        const today = new Date().toISOString().slice(0, 10);
+        const month = today.slice(0, 7);
+        const [mode, setMode] = useState('history');
+        const [historyForm, setHistoryForm] = useState({ from: month + '-01', to: today, sort: 'DESC', size: '20' });
+        const [historyQuery, setHistoryQuery] = useState(historyForm);
+        const [attemptForm, setAttemptForm] = useState({ notificationId: '', month, size: '20' });
+        const [deliveryForm, setDeliveryForm] = useState({ channel: 'WEBSOCKET', status: 'UNCONFIRMED', month, size: '20' });
+        const history = useNotificationPage();
+        const attempts = useNotificationPage();
+        const deliveries = useNotificationPage();
+        const loadHistory = history.load;
+
+        useEffect(() => {
+            loadHistory({
+                path: API_BASE + '/notifications',
+                params: {
+                    from: historyQuery.from + 'T00:00:00Z',
+                    to: utcDayEnd(historyQuery.to),
+                    sort: historyQuery.sort,
+                    size: historyQuery.size
+                }
+            });
+        }, [historyQuery, loadHistory, revision]);
+
+        function searchAttempts({ notificationId, month, size }) {
+            attempts.load({
+                path: API_BASE + '/notifications/' + encodeURIComponent(notificationId.trim()) + '/attempts',
+                params: { month, size }
+            });
+        }
+
+        function openAttempts(row) {
+            const form = {
+                notificationId: row.notificationId,
+                month: row.monthBucket.slice(0, 7),
+                size: attemptForm.size
+            };
+            setAttemptForm(form);
+            setMode('attempts');
+            searchAttempts(form);
+        }
+
+        return (
+            <section>
+                <h2>Уведомления</h2>
+                {connection !== 'connected' && <p className="notification-time" role="status">
+                    {connection === 'unavailable' ? 'Доставка в реальном времени недоступна.' : 'Подключаем доставку в реальном времени…'}
+                </p>}
+                <div className="notification-nav" aria-label="Разделы уведомлений">
+                    <button className={'nav-btn ' + (mode === 'history' ? 'active' : '')}
+                            aria-pressed={mode === 'history'} onClick={() => setMode('history')}>История</button>
+                    <button className={'nav-btn ' + (mode === 'attempts' ? 'active' : '')}
+                            aria-pressed={mode === 'attempts'} onClick={() => setMode('attempts')}>Попытки доставки</button>
+                    {isAdmin && <button className={'nav-btn ' + (mode === 'deliveries' ? 'active' : '')}
+                            aria-pressed={mode === 'deliveries'} onClick={() => setMode('deliveries')}>Результаты доставки</button>}
+                </div>
+
+                {mode === 'history' && <>
+                    <form className="filter-panel notification-filters" onSubmit={event => {
+                        event.preventDefault();
+                        setHistoryQuery({ ...historyForm });
+                    }}>
+                        <label className="filter-group">С даты (UTC)
+                            <input type="date" value={historyForm.from} max={historyForm.to} required
+                                   onChange={event => setHistoryForm({ ...historyForm, from: event.target.value })} />
+                        </label>
+                        <label className="filter-group">По дату (UTC)
+                            <input type="date" value={historyForm.to} min={historyForm.from} required
+                                   onChange={event => setHistoryForm({ ...historyForm, to: event.target.value })} />
+                        </label>
+                        <label className="filter-group">Порядок
+                            <select value={historyForm.sort} onChange={event => setHistoryForm({ ...historyForm, sort: event.target.value })}>
+                                <option value="DESC">Сначала новые</option>
+                                <option value="ASC">Сначала старые</option>
+                            </select>
+                        </label>
+                        <NotificationPageSize value={historyForm.size} onChange={size => setHistoryForm({ ...historyForm, size })} />
+                        <button className="btn-login" type="submit">Показать историю</button>
+                    </form>
+                    <NotificationResults page={history} onAttempts={openAttempts} />
+                </>}
+
+                {mode === 'attempts' && <>
+                    <form className="filter-panel notification-filters" onSubmit={event => {
+                        event.preventDefault();
+                        searchAttempts(attemptForm);
+                    }}>
+                        <label className="filter-group notification-id">ID уведомления
+                            <input value={attemptForm.notificationId} required
+                                   pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+                                   onChange={event => setAttemptForm({ ...attemptForm, notificationId: event.target.value })} />
+                        </label>
+                        <label className="filter-group">Месяц (UTC)
+                            <input type="month" value={attemptForm.month} required
+                                   onChange={event => setAttemptForm({ ...attemptForm, month: event.target.value })} />
+                        </label>
+                        <NotificationPageSize value={attemptForm.size} onChange={size => setAttemptForm({ ...attemptForm, size })} />
+                        <button className="btn-login" type="submit">Показать попытки</button>
+                    </form>
+                    <NotificationResults page={attempts} />
+                </>}
+
+                {mode === 'deliveries' && isAdmin && <>
+                    <form className="filter-panel notification-filters" onSubmit={event => {
+                        event.preventDefault();
+                        deliveries.load({
+                            path: API_BASE + '/admin/notifications/deliveries',
+                            params: { ...deliveryForm, channel: deliveryForm.channel.trim() }
+                        });
+                    }}>
+                        <label className="filter-group">Канал
+                            <input value={deliveryForm.channel} required
+                                   onChange={event => setDeliveryForm({ ...deliveryForm, channel: event.target.value })} />
+                        </label>
+                        <label className="filter-group">Статус
+                            <select value={deliveryForm.status} onChange={event => setDeliveryForm({ ...deliveryForm, status: event.target.value })}>
+                                {['UNCONFIRMED', 'DELIVERED', 'FAILED'].map(status =>
+                                    <option key={status} value={status}>{deliveryLabels[status]}</option>
+                                )}
+                            </select>
+                        </label>
+                        <label className="filter-group">Месяц (UTC)
+                            <input type="month" value={deliveryForm.month} required
+                                   onChange={event => setDeliveryForm({ ...deliveryForm, month: event.target.value })} />
+                        </label>
+                        <NotificationPageSize value={deliveryForm.size} onChange={size => setDeliveryForm({ ...deliveryForm, size })} />
+                        <button className="btn-login" type="submit">Показать результаты</button>
+                    </form>
+                    <NotificationResults page={deliveries} showRecipient />
+                </>}
+            </section>
+        );
+    }
 
     function App() {
         const [currentUser, setCurrentUser] = useState(() => {
@@ -373,6 +767,9 @@
         });
 
         const [activeTab, setActiveTab] = useState('catalog');
+        const notificationSocket = useNotificationSocket(currentUser?.id);
+        const [notificationRefresh, setNotificationRefresh] = useState(0);
+        const [leadFeedback, setLeadFeedback] = useState(null);
         const [products, setProducts] = useState([]);
         const [favorites, setFavorites] = useState([]);
         const [operations, setOperations] = useState([]);
@@ -659,6 +1056,7 @@
                 console.error(e);
             }
             setCurrentUser(null);
+            setLeadFeedback(null);
             localStorage.removeItem('user');
             setFavorites([]);
             setOperations([]);
@@ -683,17 +1081,20 @@
         };
 
         const handleCreateLead = async () => {
+            const userId = currentUser.id;
+            setLeadFeedback(null);
             try {
                 const res = await fetch(`${API_BASE}/lead`, { method: 'POST' });
                 if (res.ok) {
                     const leadId = await res.json();
-                    alert(`Заявка успешно создана! ID заявки: ${leadId}`);
+                    setLeadFeedback({ userId, text: `Заявка №${leadId} создана`, error: false });
+                    setNotificationRefresh(value => value + 1);
                 } else {
-                    alert('Ошибка при создании заявки');
+                    setLeadFeedback({ userId, text: 'Не удалось создать заявку', error: true });
                 }
             } catch (e) {
                 console.error('Ошибка отправки заявки', e);
-                alert('Не удалось отправить заявку');
+                setLeadFeedback({ userId, text: 'Не удалось отправить заявку', error: true });
             }
         };
 
@@ -845,6 +1246,10 @@
                         >
                             История операций
                         </button>
+                        <button className={`nav-btn ${activeTab === 'notifications' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('notifications')}>
+                            Уведомления
+                        </button>
                         <button
                             className={`nav-btn ${activeTab === 'analytics' ? 'active' : ''}`}
                             onClick={() => setActiveTab('analytics')}
@@ -878,6 +1283,27 @@
                 </header>
 
                 <main>
+                    {leadFeedback?.userId === currentUser.id && (
+                        <div className={leadFeedback.error ? 'error-msg' : 'lead-feedback'}
+                             role={leadFeedback.error ? 'alert' : 'status'}>{leadFeedback.text}</div>
+                    )}
+                    {notificationSocket.latest && (
+                        <aside className="notification-notice" aria-label="Новое уведомление">
+                            <span role="status">{notificationSocket.latest}</span>
+                            {activeTab !== 'notifications' && (
+                                <button className="nav-btn" onClick={() => {
+                                    notificationSocket.dismiss();
+                                    setActiveTab('notifications');
+                                }}>Открыть историю</button>
+                            )}
+                            <button className="nav-btn" onClick={notificationSocket.dismiss}>Закрыть</button>
+                        </aside>
+                    )}
+                    {activeTab === 'notifications' && (
+                        <NotificationsPanel key={currentUser.id} connection={notificationSocket.connection}
+                                            revision={notificationSocket.revision + notificationRefresh}
+                                            isAdmin={currentUser.role === 'ADMIN'} />
+                    )}
                     {activeTab === 'catalog' && (
                         <div>
                             <h2>Каталог товаров</h2>

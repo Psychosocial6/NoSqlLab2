@@ -18,4 +18,13 @@ public interface NotificationRepository
             """)
     Slice<UserNotificationEvent> findHistory(
             String userId, LocalDate monthBucket, Instant from, Instant to, Pageable pageable);
+
+    @Query("""
+            SELECT * FROM events_by_user_month
+            WHERE user_id = ?0 AND month_bucket = ?1
+              AND event_time >= ?2 AND event_time < ?3
+            ORDER BY event_time ASC, event_id ASC
+            """)
+    Slice<UserNotificationEvent> findHistoryAscending(
+            String userId, LocalDate monthBucket, Instant from, Instant to, Pageable pageable);
 }
