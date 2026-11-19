@@ -58,6 +58,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/favorite", "/api/favorite/**", "/api/operations/**", "/api/lead")
                                 .hasAnyRole(UserRoles.TEACHER, UserRoles.ADMIN)
                         .requestMatchers(HttpMethod.GET, "/api/auth/me", "/api/analytics/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/admin/notifications/deliveries").hasRole(UserRoles.ADMIN)
+                        .requestMatchers(HttpMethod.GET, "/api/notifications", "/api/notifications/*/attempts",
+                                "/ws/notifications").authenticated()
                         .anyRequest().denyAll())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .logout(logout -> logout
