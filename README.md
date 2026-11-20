@@ -1,1 +1,0 @@
-# NoSqlLab2

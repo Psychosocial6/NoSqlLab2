@@ -50,7 +50,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico",
-                                "/api/auth/csrf", "/api/product", "/api/product/**").permitAll()
+                                "/api/auth/csrf", "/api/product", "/api/product/**", "/api/experiment/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/user",
                                 "/api/resetData/createToken", "/api/resetData/reset").permitAll()
                         .requestMatchers("/api/product", "/api/product/**", "/api/user", "/api/user/**",
@@ -58,6 +58,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/favorite", "/api/favorite/**", "/api/operations/**", "/api/lead")
                                 .hasAnyRole(UserRoles.TEACHER, UserRoles.ADMIN)
                         .requestMatchers(HttpMethod.GET, "/api/auth/me", "/api/analytics/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/admin/notifications/deliveries").hasRole(UserRoles.ADMIN)
+                        .requestMatchers(HttpMethod.GET, "/api/notifications", "/api/notifications/*/attempts",
+                                "/ws/notifications").authenticated()
                         .anyRequest().denyAll())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .logout(logout -> logout
